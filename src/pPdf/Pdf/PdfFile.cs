@@ -72,14 +72,24 @@ public sealed class PdfFile : IDisposable
     }
 
     public static PdfFile Open(string path, string? password = null)
-        => Open(File.ReadAllBytes(path), password, path);
+    {
+        // read straight into the pinned buffer PDFium will keep using: no second copy of a big file
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var pinned = GC.AllocateUninitializedArray<byte>(checked((int)stream.Length), pinned: true);
+        stream.ReadExactly(pinned);
+        return OpenPinned(pinned, password, path);
+    }
 
     public static PdfFile Open(byte[] bytes, string? password = null, string? path = null)
     {
-        EnsureLibrary();
-        // pinned so PDFium can keep reading from it for the whole life of the document
         var pinned = GC.AllocateUninitializedArray<byte>(bytes.Length, pinned: true);
         bytes.CopyTo(pinned, 0);
+        return OpenPinned(pinned, password, path);
+    }
+
+    static PdfFile OpenPinned(byte[] pinned, string? password, string? path)
+    {
+        EnsureLibrary();
         FpdfDocumentT? doc;
         lock (Sync)
         {

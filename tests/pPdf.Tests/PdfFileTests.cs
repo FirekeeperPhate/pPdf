@@ -18,6 +18,7 @@ public class PdfFileTests
     public void Garbage_is_rejected()
     {
         Assert.Throws<PdfException>(() => PdfFile.Open([1, 2, 3, 4, 5]));
+        Assert.Throws<PdfException>(() => PdfFile.Open(Array.Empty<byte>()));
     }
 
     [Fact]

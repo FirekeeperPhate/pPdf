@@ -553,10 +553,10 @@ public sealed partial class PdfViewer
             case Key.Up:
                 _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - line); break;
             case Key.Left:
-                if (_scroll.ScrollableWidth > 0) _scroll.ScrollToHorizontalOffset(_scroll.HorizontalOffset - line); else PreviousPage();
+                if (_scroll.ScrollableWidth > 1) _scroll.ScrollToHorizontalOffset(_scroll.HorizontalOffset - line); else PreviousPage();
                 break;
             case Key.Right:
-                if (_scroll.ScrollableWidth > 0) _scroll.ScrollToHorizontalOffset(_scroll.HorizontalOffset + line); else NextPage();
+                if (_scroll.ScrollableWidth > 1) _scroll.ScrollToHorizontalOffset(_scroll.HorizontalOffset + line); else NextPage();
                 break;
             case Key.PageDown:
             case Key.Space when !shift:

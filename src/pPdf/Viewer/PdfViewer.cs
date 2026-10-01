@@ -317,7 +317,7 @@ public sealed partial class PdfViewer : Grid
         if (_result == null) return;
         var r = _result.PageRects[page];
         _scroll.ScrollToVerticalOffset(Math.Max(0, r.Top - PageMargin));
-        if (_scroll.ScrollableWidth > 0) _scroll.ScrollToHorizontalOffset(Math.Max(0, r.Left - PageMargin));
+        if (_scroll.ScrollableWidth > 1) _scroll.ScrollToHorizontalOffset(Math.Max(0, r.Left - PageMargin));
         SetCurrentPage(page);
         UpdateVisible();
     }

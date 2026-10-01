@@ -37,7 +37,7 @@ public partial class MainWindow : Window
 
         ApplySettingsToViewer();
         Viewer.StateChanged += (_, _) => UpdateUi();
-        Viewer.ToolChanged += (_, _) => UpdateUi();
+        Viewer.ToolChanged += (_, _) => { UpdateAnnotationBar(); UpdateUi(); };
         Viewer.SelectedAnnotationChanged += (_, _) => { UpdateAnnotationBar(); UpdateUi(); };
         Viewer.SelectionChanged += (_, _) => UpdateUi();
         Viewer.Annotations.HistoryChanged += UpdateUi;
