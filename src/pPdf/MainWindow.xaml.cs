@@ -403,7 +403,7 @@ public partial class MainWindow : Window
 
     void OnLayoutClick(object sender, RoutedEventArgs e)
     {
-        var menu = new ContextMenu { PlacementTarget = LayoutButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var menu = NewMenu(LayoutButton);
         void Layout(string header, ViewLayout l) => menu.Items.Add(CheckItem(header, Viewer.Layout == l, () => Viewer.Layout = l, radio: true));
         Layout("Continuous", ViewLayout.Continuous);
         Layout("Single page", ViewLayout.SinglePage);
@@ -417,6 +417,20 @@ public partial class MainWindow : Window
         menu.Items.Add(CheckItem("Show the cover page alone (two-page views)", Viewer.CoverAlone, () => Viewer.CoverAlone = !Viewer.CoverAlone));
         menu.IsOpen = true;
     }
+
+    /// <summary>
+    /// A drop-down menu under a toolbar button. A ContextMenu inherits the font of its PlacementTarget, and the toolbar
+    /// buttons use the icon font: without setting the text font here every item would be drawn as empty squares.
+    /// </summary>
+    ContextMenu NewMenu(FrameworkElement target) => new()
+    {
+        PlacementTarget = target,
+        Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+        FontFamily = FontFamily,
+        FontSize = FontSize,
+        FontWeight = FontWeights.Normal,
+        FontStyle = FontStyles.Normal,
+    };
 
     static MenuItem CheckItem(string header, bool isChecked, Action action, bool radio = false)
     {
@@ -436,7 +450,7 @@ public partial class MainWindow : Window
 
     void OnThemeClick(object sender, RoutedEventArgs e)
     {
-        var menu = new ContextMenu { PlacementTarget = ThemeButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var menu = NewMenu(ThemeButton);
         void Theme(string header, AppTheme t) => menu.Items.Add(CheckItem(header, _settings.Theme == t, () => SetTheme(t), radio: true));
         Theme("Follow system", AppTheme.System);
         Theme("Light", AppTheme.Light);
@@ -454,7 +468,7 @@ public partial class MainWindow : Window
 
     void OnMoreClick(object sender, RoutedEventArgs e)
     {
-        var menu = new ContextMenu { PlacementTarget = MoreButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var menu = NewMenu(MoreButton);
         var recent = new MenuItem { Header = "Open recent" };
         foreach (var p in _settings.Recent.Where(File.Exists).Take(10))
         {

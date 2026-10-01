@@ -49,6 +49,12 @@
                 <Setter Property="MinWidth" Value="30" />
             </Style>
 
+            <!-- tooltips and menus inherit the font of the element they belong to: never the icon font of a toolbar button -->
+            <Style TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="12" />
+            </Style>
+
             <Style x:Key="ToolSeparator" TargetType="Border">
                 <Setter Property="Width" Value="1" />
                 <Setter Property="Margin" Value="6,7" />
