@@ -131,7 +131,7 @@ public partial class MainWindow : Window
         _settings.TextColor = ColorText(d.Foreground);
         _settings.TextFill = d.Background is { } bg ? ColorText(bg) : null;
 
-        _settings.Maximized = WindowState == WindowState.Maximized;
+        _settings.Maximized = (_fullScreen ? _beforeFullScreen : WindowState) == WindowState.Maximized; // not "maximized" just because it was full screen
         var b = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
         if (!b.IsEmpty) { _settings.WindowLeft = b.Left; _settings.WindowTop = b.Top; _settings.WindowWidth = b.Width; _settings.WindowHeight = b.Height; }
         RememberPosition();
@@ -196,24 +196,15 @@ public partial class MainWindow : Window
         _pdf?.Dispose();
     }
 
-    async Task CloseAfterAskingAsync()
-    {
-        if (!await ConfirmDiscardAnnotationsAsync()) return;
-        _forceClose = true;
-        Close();
-    }
-
-    /// <summary>If there are annotations that were never written into a PDF, ask what to do. False = the user cancelled.</summary>
-    async Task<bool> ConfirmDiscardAnnotationsAsync()
+    /// <summary>
+    /// Before leaving a document: whatever is being typed is committed and the annotations are written to their place in %AppData%
+    /// (they come back, editable, when the file is opened again). Always true: there is nothing to ask any more.
+    /// </summary>
+    Task<bool> ConfirmDiscardAnnotationsAsync()
     {
         Viewer.CommitEdits();
-        if (!Viewer.Annotations.IsDirty) return true;
-        var answer = MessageBox.Show(this,
-            "The annotations you added are not saved in a PDF yet.\n\nSave a copy with the annotations before continuing?",
-            "pPdf", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-        if (answer == MessageBoxResult.Cancel) return false;
-        if (answer == MessageBoxResult.No) return true;
-        return await SaveCopyAsync();
+        FlushAnnotations();
+        return Task.FromResult(true);
     }
 
     // ------------------------------------------------------------------ drag and drop

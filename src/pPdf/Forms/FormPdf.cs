@@ -96,7 +96,7 @@ public static class FormPdf
                 : PdfReader.Open(stream, password, PdfDocumentOpenMode.Import);
             return Read(doc);
         }
-        catch (Exception ex) when (ex is PdfReaderException or IOException or InvalidOperationException or NotImplementedException or ArgumentException)
+        catch (Exception)
         {
             return null;
         }
@@ -219,26 +219,40 @@ public static class FormPdf
         foreach (var w in Walk(doc))
         {
             if (!values.TryGetValue(w.Name, out string? value)) continue;
-            var kind = KindOf(w);
-            switch (kind)
+            try
             {
-                case FormFieldKind.CheckBox:
-                case FormFieldKind.Radio:
+                var kind = KindOf(w);
+                switch (kind)
                 {
-                    string on = OnStateOf(w.Dict);
-                    bool selected = !string.Equals(value, "Off", StringComparison.OrdinalIgnoreCase) && value.Length > 0
-                        && (kind == FormFieldKind.CheckBox || string.Equals(value, on, StringComparison.Ordinal));
-                    w.Field.Elements.SetName("/V", "/" + (string.Equals(value, "Off", StringComparison.OrdinalIgnoreCase) || value.Length == 0 ? "Off" : value));
-                    w.Dict.Elements.SetName("/AS", "/" + (selected ? on : "Off"));
-                    break;
+                    case FormFieldKind.CheckBox:
+                    case FormFieldKind.Radio:
+                    {
+                        string on = OnStateOf(w.Dict);
+                        bool off = value.Length == 0 || string.Equals(value, "Off", StringComparison.OrdinalIgnoreCase);
+                        bool selected = !off && (kind == FormFieldKind.CheckBox || string.Equals(value, on, StringComparison.Ordinal));
+                        w.Field.Elements.SetName("/V", "/" + (off ? "Off" : value));
+                        w.Dict.Elements.SetName("/AS", "/" + (selected ? on : "Off"));
+                        break;
+                    }
+                    case FormFieldKind.Text:
+                    case FormFieldKind.Combo:
+                    case FormFieldKind.List:
+                    {
+                        w.Field.Elements.SetString("/V", value);
+                        // a choice stores its export value but shows the label
+                        string shown = value;
+                        if (kind != FormFieldKind.Text)
+                            foreach (var (export, label) in OptionsOf(Inherit(w.Dict, "/Opt")))
+                                if (export == value) { shown = label; break; }
+                        fontResource ??= CreateFont(doc);
+                        SetTextAppearance(doc, w, shown, fontResource, kind.Value, w.Dict.Elements.GetRectangle("/Rect"));
+                        break;
+                    }
                 }
-                case FormFieldKind.Text:
-                case FormFieldKind.Combo:
-                case FormFieldKind.List:
-                    w.Field.Elements.SetString("/V", value);
-                    fontResource ??= CreateFont(doc);
-                    SetTextAppearance(doc, w, value, fontResource, kind.Value, w.Dict.Elements.GetRectangle("/Rect"));
-                    break;
+            }
+            catch (Exception)
+            {
+                // one odd widget must not lose the values of all the others
             }
         }
     }

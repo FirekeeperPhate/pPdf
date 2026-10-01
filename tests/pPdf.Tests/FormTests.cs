@@ -219,3 +219,28 @@ public class FormPrintTests
         Assert.True(Ink(withForm, 100, 268, 114, 282) > 5, "the check box is ticked");
     }
 }
+
+public class FormChoiceAppearanceTests
+{
+    [Fact]
+    public void A_choice_shows_its_label_not_its_stored_value()
+    {
+        using var doc = PdfReader.Open(new MemoryStream(TestForm.Create()), PdfDocumentOpenMode.Modify);
+        FormPdf.Apply(doc, new Dictionary<string, string> { ["color"] = "b" });
+        using var ms = new MemoryStream();
+        doc.Save(ms, false);
+        using var check = PdfReader.Open(new MemoryStream(ms.ToArray()), PdfDocumentOpenMode.Import);
+        var annots = check.Pages[0].Elements.GetArray("/Annots")!;
+        string? ap = null;
+        for (int i = 0; i < annots.Elements.Count; i++)
+        {
+            var d = annots.Elements.GetDictionary(i);
+            if (d?.Elements.GetString("/T") != "color") continue;
+            ap = System.Text.Encoding.Latin1.GetString(d.Elements.GetDictionary("/AP")!.Elements.GetDictionary("/N")!.Stream.Value);
+        }
+        Assert.NotNull(ap);
+        Assert.Contains("(Blue) Tj", ap);
+        Assert.DoesNotContain("(b) Tj", ap);
+        Assert.Equal("b", FormPdf.Read(ms.ToArray(), null)!.Find("color")!.Value); // the value stays the export value
+    }
+}

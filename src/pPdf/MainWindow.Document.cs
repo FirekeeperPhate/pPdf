@@ -54,6 +54,7 @@ public partial class MainWindow
         var form = Viewer.Form;
         bool jpeg = dlg.FilterIndex == 2 || dlg.FileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || dlg.FileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
         SetBusy(true, "Exporting...");
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background); // let the overlay paint before the heavy part
         try
         {
             // WPF drawing needs this thread: PDFium does the heavy part, the encoding follows off it

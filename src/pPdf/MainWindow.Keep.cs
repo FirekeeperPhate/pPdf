@@ -41,7 +41,7 @@ public partial class MainWindow
             var snapshot = Viewer.Annotations.Items.Select(a => a.Clone()).ToList();
             AnnotationPersistence.Default.Save(_path, snapshot, KeptFormValues());
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
             // the disk refused: the annotations stay on screen, and "Save a copy" still works
         }
@@ -56,7 +56,7 @@ public partial class MainWindow
         _pendingFormValues = null;
         AnnotationPersistence.Snapshot kept;
         try { kept = AnnotationPersistence.Default.Load(path); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
+        catch (Exception) { return; } // kept annotations are a convenience: a damaged store must never stop a document from opening
         if (kept.IsEmpty) return;
         if (kept.FormValues.Count > 0) _pendingFormValues = kept.FormValues;
         _keepSuspended = true;

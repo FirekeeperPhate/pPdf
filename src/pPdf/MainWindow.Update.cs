@@ -109,15 +109,6 @@ public partial class MainWindow
                 "pPdf", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-        // the update closes every pPdf window: annotations that were never saved first, in each of them
-        var windows = Application.Current.Windows.OfType<MainWindow>().ToList();
-        var wasDirty = windows.ToDictionary(w => w, w => w.Viewer.Annotations.IsDirty);
-        foreach (var w in windows)
-        {
-            w.Activate();
-            if (!await w.ConfirmDiscardAnnotationsAsync()) return;
-        }
-
         string installer;
         SetBusy(true, $"Downloading pPdf {version}...");
         try
@@ -134,12 +125,9 @@ public partial class MainWindow
         }
         SetBusy(false);
 
-        // annotations added while downloading: ask again
-        foreach (var w in windows)
-        {
-            w.Viewer.CommitEdits();
-            if (!wasDirty[w] && w.Viewer.Annotations.IsDirty && !await w.ConfirmDiscardAnnotationsAsync()) return;
-        }
+        // the update closes every pPdf window: what is being typed is committed and the annotations written, in each of them
+        // (closing a window does this too, this just makes sure nothing is left for the very last moment)
+        foreach (var w in Application.Current.Windows.OfType<MainWindow>().ToList()) await w.ConfirmDiscardAnnotationsAsync();
 
         SetBusy(true, $"Installing pPdf {version}...");
         bool started = await CloseForUpdateAsync(installer, _path);
