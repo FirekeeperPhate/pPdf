@@ -81,7 +81,7 @@ public sealed partial class ImageAnnotation : Annotation
 
     public static ImageAnnotation FromBytes(byte[] data)
     {
-        var src = DecodeBitmap(data);
+        var src = DecodeBitmap(data, out var natural);
         // only PNG and JPEG are embedded as they are; anything else (GIF, TIFF, BMP, WebP...) is converted once, here,
         // so saving never depends on which codecs PDFsharp understands
         if (!IsPng(data) && !IsJpeg(data))
@@ -92,7 +92,7 @@ public sealed partial class ImageAnnotation : Annotation
             encoder.Save(ms);
             data = ms.ToArray();
         }
-        return new ImageAnnotation { Data = data, Source = src, NaturalSize = new Size(src.PixelWidth, src.PixelHeight) };
+        return new ImageAnnotation { Data = data, Source = src, NaturalSize = natural };
     }
 
     static bool IsPng(byte[] d) => d.Length > 8 && d[0] == 0x89 && d[1] == 0x50 && d[2] == 0x4E && d[3] == 0x47;
@@ -107,11 +107,29 @@ public sealed partial class ImageAnnotation : Annotation
         return FromBytes(ms.ToArray());
     }
 
-    static BitmapSource DecodeBitmap(byte[] data)
+    /// <summary>The longest side, in pixels, of the bitmap kept in memory for display (the original file is embedded as it is).</summary>
+    internal const int MaxDecodePixels = 4096;
+
+    /// <summary>Decodes an image for display, no larger than <see cref="MaxDecodePixels"/>: a 50-megapixel photo would take 200 MB as a bitmap.</summary>
+    static BitmapSource DecodeBitmap(byte[] data, out Size natural)
     {
         using var ms = new MemoryStream(data);
-        var frame = BitmapFrame.Create(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-        var converted = new FormatConvertedBitmap(frame, PixelFormats.Pbgra32, null, 0);
+        var probe = BitmapDecoder.Create(ms, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.None).Frames[0];
+        int w = probe.PixelWidth, h = probe.PixelHeight;
+        natural = new Size(w, h);
+
+        ms.Position = 0;
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = ms;
+        if (Math.Max(w, h) > MaxDecodePixels)
+        {
+            if (w >= h) image.DecodePixelWidth = MaxDecodePixels; else image.DecodePixelHeight = MaxDecodePixels;
+        }
+        image.EndInit();
+        var converted = new FormatConvertedBitmap(image, PixelFormats.Pbgra32, null, 0);
         converted.Freeze();
         return converted;
     }

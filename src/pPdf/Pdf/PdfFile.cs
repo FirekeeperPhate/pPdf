@@ -91,6 +91,7 @@ public sealed class PdfFile : IDisposable
     public static PdfFile Open(string path, string? password = null)
     {
         long length = new FileInfo(path).Length;
+        if (length > uint.MaxValue) throw new PdfException("The file is bigger than 4 GB, which pPdf cannot open.");
         if (length > OnDemandThreshold && length <= uint.MaxValue) return OpenOnDemand(path, length, password);
 
         // read straight into the pinned buffer PDFium will keep using: no second copy of a big file

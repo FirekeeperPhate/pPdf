@@ -11,6 +11,7 @@
 - Smoother wheel scrolling (a short glide).
 - The toolbar wraps onto a second row when the window is narrow instead of hiding buttons.
 - Shift + wheel scrolls sideways when the page is wider than the window. Arrow keys, Page Up / Down and the wheel over an open list now work inside form fields instead of also moving the page. Saving a copy over the open file reloads it without drawing the annotations twice.
+- Very large images added as annotations are shown at a reduced size in memory (the original file is still the one embedded), and files over 4 GB give a clear message instead of an arithmetic error.
 
 
 ## 0.1.5

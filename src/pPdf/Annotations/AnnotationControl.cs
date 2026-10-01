@@ -271,11 +271,20 @@ public sealed class AnnotationControl : Grid
         }
     }
 
-    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) => EndDrag();
+
+    // the capture can be lost without a button release (Alt+Tab, a dialog): the drag ends there, it must not follow the mouse afterwards
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        EndDrag();
+    }
+
+    void EndDrag()
     {
         if (_drag == Drag.None) return;
         _drag = Drag.None;
-        ReleaseMouseCapture();
+        if (IsMouseCaptured) ReleaseMouseCapture();
         if (_dragBefore != null) _store.Commit(Model, _dragBefore);
         _dragBefore = null;
     }

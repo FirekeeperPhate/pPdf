@@ -87,6 +87,18 @@ public class AnnotationWriterTests
     }
 
     [Fact]
+    public void Huge_image_is_shown_at_reduced_size_but_keeps_its_natural_size_and_original_bytes()
+    {
+        var bytes = SolidPng(Colors.Blue, 6000, 300);
+        var img = ImageAnnotation.FromBytes(bytes);
+        Assert.Equal(6000, img.NaturalSize.Width);
+        Assert.Equal(300, img.NaturalSize.Height);
+        Assert.Equal(ImageAnnotation.MaxDecodePixels, img.Source.PixelWidth);
+        Assert.True(img.Source.PixelHeight is >= 200 and <= 210);
+        Assert.Same(bytes, img.Data); // the embedded file is the original, untouched
+    }
+
+    [Fact]
     public void Transparent_png_lets_the_page_show_through()
     {
         var img = ImageAnnotation.FromBytes(SolidPng(Color.FromArgb(128, 255, 0, 0)));
