@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
 
 - The pointer now switches by itself: over text it is the I-beam and dragging selects; over empty page or the grey background it is an open hand and dragging scrolls the page (a plain click there still clears the selection). The Hand tool remains for dragging even over text.
 
