@@ -274,11 +274,6 @@ public sealed partial class PdfViewer
     void GoToPageIfNotVisible(int page)
     {
         if (_result == null) return;
-        if (IsPaged)
-        {
-            if (_result.PageRects[page].IsEmpty) GoToPage(page);
-            return;
-        }
         var view = new Rect(_scroll.HorizontalOffset, _scroll.VerticalOffset, _scroll.ViewportWidth, _scroll.ViewportHeight);
         if (Rect.Intersect(view, _result.PageRects[page]).IsEmpty) GoToPage(page);
     }
@@ -549,9 +544,9 @@ public sealed partial class PdfViewer
         switch (e.Key)
         {
             case Key.Down:
-                _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset + line); break;
+                ScrollBy(line); break;
             case Key.Up:
-                _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset - line); break;
+                ScrollBy(-line); break;
             case Key.Left:
                 if (_scroll.ScrollableWidth > 1) _scroll.ScrollToHorizontalOffset(_scroll.HorizontalOffset - line); else PreviousPage();
                 break;
@@ -576,21 +571,6 @@ public sealed partial class PdfViewer
 
     void ScrollScreen(int direction)
     {
-        double step = _scroll.ViewportHeight * 0.9;
-        if (IsPaged)
-        {
-            bool atEdge = direction > 0 ? _scroll.VerticalOffset >= _scroll.ScrollableHeight - 1 : _scroll.VerticalOffset <= 1;
-            if (atEdge)
-            {
-                int row = PageLayoutEngine.RowOfPage(_rows, _currentPage) + direction;
-                if (row >= 0 && row < _rows.Count)
-                {
-                    GoToPage(_rows[row][0]);
-                    if (direction < 0) _scroll.ScrollToVerticalOffset(_scroll.ScrollableHeight);
-                }
-                return;
-            }
-        }
-        _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset + direction * step);
+        ScrollBy(direction * _scroll.ViewportHeight * 0.9);
     }
 }

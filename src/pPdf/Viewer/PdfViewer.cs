@@ -25,6 +25,7 @@ public sealed partial class PdfViewer : Grid
     readonly Canvas _canvas;
     readonly Dictionary<int, PageSlot> _slots = [];
     readonly DispatcherTimer _settleTimer;
+    readonly DispatcherTimer _snapTimer;
 
     RenderService _renderer = new();
     PdfFile? _pdf;
@@ -38,7 +39,6 @@ public sealed partial class PdfViewer : Grid
 
     List<int[]> _rows = [];
     LayoutResult? _result;
-    int _currentRow;
     int _currentPage;
     bool _inLayout;
     int? _pendingGoto;
@@ -68,6 +68,8 @@ public sealed partial class PdfViewer : Grid
         // a short pause after the last layout change: render with the final geometry, and prefetch
         _settleTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(60) };
         _settleTimer.Tick += (_, _) => { _settleTimer.Stop(); UpdateVisible(); };
+        _snapTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
+        _snapTimer.Tick += (_, _) => { _snapTimer.Stop(); SnapToRow(); };
 
         InitSelection();
         InitAnnotations();
@@ -89,7 +91,6 @@ public sealed partial class PdfViewer : Grid
             int page = _currentPage;
             _layout = value;
             _rows = BuildRows();
-            _currentRow = PageLayoutEngine.RowOfPage(_rows, page);
             ApplyLayout(keepAnchor: false);
             GoToPage(page);
             RaiseStateChanged();
@@ -124,7 +125,6 @@ public sealed partial class PdfViewer : Grid
             int page = _currentPage;
             _coverAlone = value;
             _rows = BuildRows();
-            _currentRow = PageLayoutEngine.RowOfPage(_rows, page);
             ApplyLayout(keepAnchor: false);
             GoToPage(page);
         }
@@ -164,7 +164,6 @@ public sealed partial class PdfViewer : Grid
         _pdf = pdf;
         _rows = BuildRows();
         _currentPage = Math.Clamp(startPage, 0, Math.Max(0, pdf.PageCount - 1));
-        _currentRow = PageLayoutEngine.RowOfPage(_rows, _currentPage);
         _rotation = 0;
         _pendingGoto = null;
         ApplyLayout(keepAnchor: false);
@@ -230,7 +229,7 @@ public sealed partial class PdfViewer : Grid
             var anchor = keepAnchor ? CaptureAnchor(anchorViewportPoint) : null;
             var viewport = new Size(_scroll.ViewportWidth > 0 ? _scroll.ViewportWidth : ActualWidth,
                                     _scroll.ViewportHeight > 0 ? _scroll.ViewportHeight : ActualHeight);
-            _result = PageLayoutEngine.Compute(_pdf.Pages, _rows, _rotation, PageLayoutEngine.IsPaged(_layout), _currentRow,
+            _result = PageLayoutEngine.Compute(_pdf.Pages, _rows, _rotation, PageLayoutEngine.IsPaged(_layout),
                 _zoomMode, _zoom, viewport, PageMargin, PageGap, RowGap, DpiScale);
 
             _canvas.Width = _result.ExtentWidth;
@@ -300,21 +299,17 @@ public sealed partial class PdfViewer : Grid
     {
         if (_pdf == null || _pdf.PageCount == 0) return;
         page = Math.Clamp(page, 0, _pdf.PageCount - 1);
+        if (_result == null) return;
         if (IsPaged)
         {
+            // the row's slot fills the window: put its top at the top of the view
             int row = PageLayoutEngine.RowOfPage(_rows, page);
-            if (row != _currentRow || _result == null || _result.PageRects[page].IsEmpty)
-            {
-                _currentRow = row;
-                ApplyLayout(keepAnchor: false);
-            }
-            _scroll.ScrollToVerticalOffset(0);
+            _scroll.ScrollToVerticalOffset(_result.RowSlots[row].Top);
             _scroll.ScrollToHorizontalOffset(0);
             SetCurrentPage(_rows[row][0]);
             UpdateVisible();
             return;
         }
-        if (_result == null) return;
         var r = _result.PageRects[page];
         _scroll.ScrollToVerticalOffset(Math.Max(0, r.Top - PageMargin));
         if (_scroll.ScrollableWidth > 1) _scroll.ScrollToHorizontalOffset(Math.Max(0, r.Left - PageMargin));
@@ -356,6 +351,11 @@ public sealed partial class PdfViewer : Grid
     {
         if (_inLayout || _pdf == null) return;
         UpdateVisible();
+        if (IsPaged && e.VerticalChange != 0)
+        {
+            _snapTimer.Stop();
+            _snapTimer.Start();
+        }
     }
 
     void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -370,18 +370,53 @@ public sealed partial class PdfViewer : Grid
         }
         if (!IsPaged) return;
 
-        // in the one-page views, scrolling past the edge turns the page
-        bool down = e.Delta < 0;
-        double eps = 1.0;
-        bool atEdge = down ? _scroll.VerticalOffset >= _scroll.ScrollableHeight - eps : _scroll.VerticalOffset <= eps;
-        if (!atEdge) return;
         e.Handled = true;
-        if ((DateTime.UtcNow - _lastFlip).TotalMilliseconds < 250) return;
-        int row = PageLayoutEngine.RowOfPage(_rows, _currentPage) + (down ? 1 : -1);
+        ScrollBy(-e.Delta / 120.0 * 48, throttleFlips: true);
+    }
+
+    /// <summary>
+    /// Scrolls by <paramref name="delta"/> DIPs (positive = down). In the one-page and two-page views the movement stops at the
+    /// end of the current row, and pushing further turns the page (the scroll bar itself spans the whole document).
+    /// </summary>
+    void ScrollBy(double delta, bool throttleFlips = false)
+    {
+        if (_result == null) return;
+        if (!IsPaged) { _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset + delta); return; }
+
+        int row = PageLayoutEngine.RowOfPage(_rows, _currentPage);
+        var (min, max) = RowScrollRange(row);
+        double offset = _scroll.VerticalOffset;
+        if (delta > 0 && offset >= max - 1) { FlipRow(row + 1, toBottom: false, throttleFlips); return; }
+        if (delta < 0 && offset <= min + 1) { FlipRow(row - 1, toBottom: true, throttleFlips); return; }
+        _scroll.ScrollToVerticalOffset(Math.Clamp(offset + delta, min, max));
+    }
+
+    void FlipRow(int row, bool toBottom, bool throttle)
+    {
         if (row < 0 || row >= _rows.Count) return;
+        // a touchpad's momentum sends dozens of wheel events: one turn per gesture step
+        if (throttle && (DateTime.UtcNow - _lastFlip).TotalMilliseconds < 250) return;
         _lastFlip = DateTime.UtcNow;
         GoToPage(_rows[row][0]);
-        if (!down) _scroll.ScrollToVerticalOffset(_scroll.ScrollableHeight);
+        if (toBottom) _scroll.ScrollToVerticalOffset(RowScrollRange(row).Max);
+    }
+
+    /// <summary>The vertical offsets at which the viewport stays inside one row's slot (paged views).</summary>
+    (double Min, double Max) RowScrollRange(int row)
+    {
+        var slot = _result!.RowSlots[row];
+        return (slot.Top, Math.Max(slot.Top, slot.Bottom - _scroll.ViewportHeight));
+    }
+
+    /// <summary>After the scroll bar was dragged the view may straddle two pages: settle on the one that shows most.</summary>
+    void SnapToRow()
+    {
+        if (_pdf == null || _result == null || !IsPaged) return;
+        if (Mouse.LeftButton == MouseButtonState.Pressed) { _snapTimer.Start(); return; } // still dragging
+        var (min, max) = RowScrollRange(PageLayoutEngine.RowOfPage(_rows, _currentPage));
+        double offset = _scroll.VerticalOffset;
+        double target = Math.Clamp(offset, min, max);
+        if (Math.Abs(target - offset) > 0.5) _scroll.ScrollToVerticalOffset(target);
     }
 
     // ------------------------------------------------------------------ virtualisation
@@ -408,7 +443,7 @@ public sealed partial class PdfViewer : Grid
         {
             var r = _result.PageRects[p];
             if (r.IsEmpty) continue;
-            if (r.Top > near.Bottom) { if (!IsPaged) break; else continue; }
+            if (r.Top > near.Bottom) break;
             if (r.Bottom < near.Top || r.Right < near.Left || r.Left > near.Right) continue;
             wanted.Add(p);
             var inter = Rect.Intersect(r, view);
@@ -436,8 +471,8 @@ public sealed partial class PdfViewer : Grid
             RequestRender(slot, view, visible ? 0 : 1, dpi);
         }
 
-        if (!IsPaged) SetCurrentPage(bestPage);
-        else if (_rows.Count > 0) SetCurrentPage(_rows[Math.Clamp(_currentRow, 0, _rows.Count - 1)][0]);
+        // the one-page views name a row by its first page
+        SetCurrentPage(IsPaged && _rows.Count > 0 ? _rows[PageLayoutEngine.RowOfPage(_rows, bestPage)][0] : bestPage);
     }
 
     // ------------------------------------------------------------------ rendering

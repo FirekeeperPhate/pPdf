@@ -23,10 +23,12 @@ public sealed class LayoutResult
     public double Scale { get; init; }
     public double ExtentWidth { get; init; }
     public double ExtentHeight { get; init; }
-    /// <summary>Rectangle of every laid out page, in canvas coordinates; <see cref="Rect.Empty"/> for pages not shown.</summary>
+    /// <summary>Rectangle of every page, in canvas coordinates.</summary>
     public Rect[] PageRects { get; init; } = [];
-    /// <summary>Rectangle of every row (index = row number); <see cref="Rect.Empty"/> for rows not shown.</summary>
+    /// <summary>Rectangle of every row (index = row number).</summary>
     public Rect[] RowRects { get; init; } = [];
+    /// <summary>The room each row owns in the column: the same as the row in the continuous views, at least a whole viewport in the paged ones.</summary>
+    public Rect[] RowSlots { get; init; } = [];
 }
 
 /// <summary>Pure layout maths of the viewer: which pages share a row, how big they are, where they go.</summary>
@@ -63,25 +65,21 @@ public static class PageLayoutEngine
     static (double W, double H) Dim(PageSize p, int rotation)
         => (rotation & 1) == 1 ? (p.Height, p.Width) : (p.Width, p.Height);
 
-    /// <param name="paged">Only <paramref name="currentRow"/> is laid out (single page / two pages views).</param>
+    /// <param name="paged">
+    /// Single page / two pages views: every row still gets its place in one long scrollable column (so the scroll bar
+    /// spans the whole document), but each row's slot is at least as tall as the viewport, so one row fills the window.
+    /// </param>
     /// <param name="zoom">Used by <see cref="ZoomMode.Custom"/>: 1.0 = 100 %.</param>
     /// <param name="dpiScale">Device pixels per DIP: page rectangles are snapped to whole device pixels.</param>
-    public static LayoutResult Compute(PageSize[] pages, List<int[]> rows, int rotation, bool paged, int currentRow,
+    public static LayoutResult Compute(PageSize[] pages, List<int[]> rows, int rotation, bool paged,
         ZoomMode mode, double zoom, Size viewport, double margin, double pageGap, double rowGap, double dpiScale)
     {
-        var shown = new List<int>();
-        if (rows.Count > 0)
-        {
-            if (paged) shown.Add(Math.Clamp(currentRow, 0, rows.Count - 1));
-            else for (int r = 0; r < rows.Count; r++) shown.Add(r);
-        }
-
         double vw = Math.Max(1, viewport.Width), vh = Math.Max(1, viewport.Height);
         double scale = Math.Clamp(zoom, MinZoom, MaxZoom) * DipsPerPoint;
-        if (mode != ZoomMode.Custom && shown.Count > 0)
+        if (mode != ZoomMode.Custom && rows.Count > 0)
         {
             double best = double.MaxValue;
-            foreach (int r in shown)
+            for (int r = 0; r < rows.Count; r++)
             {
                 double sumW = 0, maxH = 0;
                 foreach (int p in rows[r])
@@ -89,8 +87,7 @@ public static class PageLayoutEngine
                     var (w, h) = Dim(pages[p], rotation);
                     sumW += w; maxH = Math.Max(maxH, h);
                 }
-                double byWidth = (vw - 2 * margin - pageGap * (rows[r].Length - 1)) / sumW;
-                double s = byWidth;
+                double s = (vw - 2 * margin - pageGap * (rows[r].Length - 1)) / sumW;
                 if (mode == ZoomMode.FitPage) s = Math.Min(s, (vh - 2 * margin) / maxH);
                 best = Math.Min(best, s);
             }
@@ -102,13 +99,13 @@ public static class PageLayoutEngine
         var rects = new Rect[pages.Length];
         Array.Fill(rects, Rect.Empty);
         var rowRects = new Rect[rows.Count];
-        Array.Fill(rowRects, Rect.Empty);
+        var rowSlots = new Rect[rows.Count];
 
         // measure the rows first (the extent depends on the widest one)
         var rowW = new double[rows.Count];
         var rowH = new double[rows.Count];
         double maxW = 0;
-        foreach (int r in shown)
+        for (int r = 0; r < rows.Count; r++)
         {
             double w = pageGap * (rows[r].Length - 1), h = 0;
             foreach (int p in rows[r])
@@ -122,35 +119,26 @@ public static class PageLayoutEngine
         }
 
         double extentW = Math.Max(vw, maxW + 2 * margin);
-        double y = margin;
-        double extentH;
-        if (paged && shown.Count == 1)
+        double y = paged ? 0 : margin;
+        for (int r = 0; r < rows.Count; r++)
         {
-            int r = shown[0];
-            extentH = Math.Max(vh, rowH[r] + 2 * margin);
-            y = Snap((extentH - rowH[r]) / 2);
-        }
-        else
-        {
-            double total = 2 * margin;
-            foreach (int r in shown) total += rowH[r] + rowGap;
-            extentH = Math.Max(total - (shown.Count > 0 ? rowGap : 0), shown.Count == 0 ? 0 : 1);
-        }
-
-        foreach (int r in shown)
-        {
+            // the slot is the room a row owns in the column: in the paged views at least a whole viewport
+            double slotH = paged ? Math.Max(vh, rowH[r] + 2 * margin) : rowH[r];
+            double top = paged ? y + Snap((slotH - rowH[r]) / 2) : y;
             double x = Snap((extentW - rowW[r]) / 2);
-            rowRects[r] = new Rect(x, y, rowW[r], rowH[r]);
+            rowSlots[r] = new Rect(0, y, extentW, slotH);
+            rowRects[r] = new Rect(x, top, rowW[r], rowH[r]);
             foreach (int p in rows[r])
             {
                 var d = Dim(pages[p], rotation);
                 double w = Snap(d.W * scale), h = Snap(d.H * scale);
-                rects[p] = new Rect(x, Snap(y + (rowH[r] - h) / 2), w, h);
+                rects[p] = new Rect(x, Snap(top + (rowH[r] - h) / 2), w, h);
                 x += w + pageGap;
             }
-            y += rowH[r] + rowGap;
+            y += slotH + (paged ? 0 : rowGap);
         }
 
-        return new LayoutResult { Scale = scale, ExtentWidth = extentW, ExtentHeight = extentH, PageRects = rects, RowRects = rowRects };
+        double extentH = rows.Count == 0 ? 0 : paged ? y : Math.Max(1, y - rowGap + margin);
+        return new LayoutResult { Scale = scale, ExtentWidth = extentW, ExtentHeight = extentH, PageRects = rects, RowRects = rowRects, RowSlots = rowSlots };
     }
 }
