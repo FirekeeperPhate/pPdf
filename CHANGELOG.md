@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - **Annotations are kept**: text boxes, images and markups you add are saved automatically (a moment after each change, and when you close) in `%AppData%\pPdf\annotations` and come back, still editable, the next time you open the same file. Closing no longer asks to save: *Save a copy* is only for writing them into a PDF. The PDF itself is never modified.
 - **Highlight, underline and strike-through** of the selected text (toolbar, with a color picker). Click marked text to select the markup and change its kind or color, or delete it. Saved into the copy, printed and exported.
