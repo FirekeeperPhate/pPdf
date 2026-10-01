@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Fixed the drop-down menus (page layout, theme, More): their items were drawn as empty squares because they inherited the icon font of the toolbar button. Tooltips now have an explicit text font too.
+
 ## 0.1.1
 
 - Automatic updates: pPdf checks GitHub once a day for a newer release (More menu: Check for updates / automatic check on or off), downloads the installer of the same edition, verifies size and SHA-256, installs it and reopens the same document. Version 0.1.0 cannot do this: install 0.1.1 by hand once.
