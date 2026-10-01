@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         Viewer.Annotations.HistoryChanged += UpdateUi;
 
         InitMemoryTrim();
+        InitPositionSaving();
         InitSearch();
         InitSidebar();
         BuildRecentList();
@@ -127,7 +128,7 @@ public partial class MainWindow : Window
         _settings.Maximized = WindowState == WindowState.Maximized;
         var b = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
         if (!b.IsEmpty) { _settings.WindowLeft = b.Left; _settings.WindowTop = b.Top; _settings.WindowWidth = b.Width; _settings.WindowHeight = b.Height; }
-        if (_path != null) _settings.AddRecent(_path, Viewer.CurrentPage);
+        RememberPosition();
         _settings.Save();
     }
 
@@ -281,10 +282,9 @@ public partial class MainWindow : Window
         CloseDocument(saveRecent: true);
         _pdf = pdf;
         _path = path;
-        int start = _settings.LastPages.TryGetValue(path, out int last) ? last : 0;
-        Viewer.Open(pdf, start);
+        Viewer.Open(pdf, _settings.FindPosition(path));
         WelcomePanel.Visibility = Visibility.Collapsed;
-        _settings.AddRecent(path, start);
+        _settings.AddRecent(path);
         BuildRecentList();
         LoadSidebar(pdf);
         if (FindBar.Visibility == Visibility.Visible && FindBox.Text.Length > 0) RunSearch();
@@ -292,10 +292,34 @@ public partial class MainWindow : Window
         Viewer.Focus();
     }
 
+    // a few seconds after the last movement the position is written to disk, so a crash or a kill does not lose it
+    readonly System.Windows.Threading.DispatcherTimer _positionTimer = new() { Interval = TimeSpan.FromSeconds(8) };
+
+    void InitPositionSaving()
+    {
+        _positionTimer.Tick += (_, _) =>
+        {
+            _positionTimer.Stop();
+            if (_pdf == null) return;
+            RememberPosition();
+            _settings.Save();
+        };
+        Viewer.ViewMoved += (_, _) => { _positionTimer.Stop(); _positionTimer.Start(); };
+    }
+
+    /// <summary>Notes where the open document is (page, how far down, zoom, rotation) so it opens there next time.</summary>
+    void RememberPosition()
+    {
+        if (_path == null || _pdf == null || Viewer.CapturePosition() is not { } position) return;
+        position.Path = _path;
+        _settings.AddRecent(_path);
+        _settings.SavePosition(position);
+    }
+
     void CloseDocument(bool saveRecent)
     {
         if (_pdf == null) return;
-        if (saveRecent && _path != null) _settings.AddRecent(_path, Viewer.CurrentPage);
+        if (saveRecent) RememberPosition();
         ResetSearch();
         Viewer.Close();
         var old = _pdf;

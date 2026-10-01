@@ -48,8 +48,13 @@ public sealed class AppSettings
     public bool Maximized { get; set; }
 
     public List<string> Recent { get; set; } = [];
-    /// <summary>Last page seen in each recent file (0-based).</summary>
+    /// <summary>Older versions: last page of each recent file (0-based). Only read, for files that have no <see cref="Positions"/> entry yet.</summary>
     public Dictionary<string, int> LastPages { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Where each document was left, most recently closed first (at most <see cref="MaxPositions"/>).</summary>
+    public List<DocPosition> Positions { get; set; } = [];
+
+    public const int MaxPositions = 200;
 
     public static string Folder
     {
@@ -85,12 +90,42 @@ public sealed class AppSettings
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
-    public void AddRecent(string path, int lastPage)
+    public void AddRecent(string path)
     {
         Recent.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
         Recent.Insert(0, path);
         if (Recent.Count > 12) Recent.RemoveRange(12, Recent.Count - 12);
-        LastPages[path] = lastPage;
-        foreach (var k in LastPages.Keys.Where(k => !Recent.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList()) LastPages.Remove(k);
     }
+
+    /// <summary>The saved position of a document, or null if it was never opened (or only by an older version: then just its page).</summary>
+    public DocPosition? FindPosition(string path)
+    {
+        var found = Positions.FirstOrDefault(p => string.Equals(p.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (found != null) return found;
+        return LastPages.TryGetValue(path, out int page) ? new DocPosition { Path = path, Page = page } : null;
+    }
+
+    public void SavePosition(DocPosition position)
+    {
+        Positions.RemoveAll(p => string.Equals(p.Path, position.Path, StringComparison.OrdinalIgnoreCase));
+        Positions.Insert(0, position);
+        if (Positions.Count > MaxPositions) Positions.RemoveRange(MaxPositions, Positions.Count - MaxPositions);
+        LastPages.Remove(position.Path);
+    }
+}
+
+/// <summary>Where a document was left: the page at the top of the window, how far down it, and how it was being viewed.</summary>
+public sealed class DocPosition
+{
+    public string Path { get; set; } = "";
+    /// <summary>0-based page (the first page of the row in the two-page views).</summary>
+    public int Page { get; set; }
+    /// <summary>How far down that page the top of the window is, 0..1 of its height.</summary>
+    public double OffsetY { get; set; }
+    /// <summary>How it was zoomed; null when only the page is known (a position migrated from an older version).</summary>
+    public ZoomMode? ZoomMode { get; set; }
+    /// <summary>Zoom factor (1.0 = 100 %), meaningful for <see cref="Viewer.ZoomMode.Custom"/>.</summary>
+    public double Zoom { get; set; } = 1.0;
+    /// <summary>Quarter turns clockwise.</summary>
+    public int? Rotation { get; set; }
 }

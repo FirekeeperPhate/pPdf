@@ -2,7 +2,7 @@
 
 A small PDF reader for Windows (.NET 10, WPF), light and dark theme.
 
-- **Viewing**: continuous, single page, two pages, two pages continuous; fit width / fit page / any zoom (Ctrl+wheel); rotation; thumbnails and outline panel; clickable links; optional inverted page colors for night reading.
+- **Viewing**: reopens each document exactly where you left it (page, point in the page, zoom, rotation); continuous, single page, two pages, two pages continuous; fit width / fit page / any zoom (Ctrl+wheel); rotation; thumbnails and outline panel; clickable links; optional inverted page colors for night reading.
 - **Text**: the pointer is an I-beam over text and an open hand elsewhere (drag the empty page to scroll); select (drag, double-click word, triple-click line, Ctrl+A) and copy; find across the whole document (accent/case-insensitive, match case, whole words) with highlighted hits.
 - **Annotations**: keyboard text boxes (font, size, bold/italic, color, fill) and images (transparent PNG supported) that can be moved and resized; paste or drop images; undo/redo.
   *Save a copy* (Ctrl+S) writes the annotations into the PDF pages (they become part of the page content); the original file is never touched.

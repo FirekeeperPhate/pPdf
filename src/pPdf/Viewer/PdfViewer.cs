@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using pPdf.Annotations;
 using pPdf.Pdf;
+using pPdf.Services;
 
 namespace pPdf.Viewer;
 
@@ -41,7 +42,7 @@ public sealed partial class PdfViewer : Grid
     LayoutResult? _result;
     int _currentPage;
     bool _inLayout;
-    int? _pendingGoto;
+    DocPosition? _pendingPosition;
     DateTime _lastFlip = DateTime.MinValue;
 
     public PdfViewer()
@@ -144,6 +145,8 @@ public sealed partial class PdfViewer : Grid
     }
 
     public event EventHandler? StateChanged;
+    /// <summary>The view was scrolled (also within a page, which <see cref="StateChanged"/> does not report).</summary>
+    public event EventHandler? ViewMoved;
     void RaiseStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
 
     List<int[]> BuildRows() => _pdf == null ? [] : PageLayoutEngine.BuildRows(_pdf.PageCount, PageLayoutEngine.PagesPerRow(_layout), _coverAlone);
@@ -158,19 +161,67 @@ public sealed partial class PdfViewer : Grid
 
     // ------------------------------------------------------------------ opening / closing
 
-    public void Open(PdfFile pdf, int startPage = 0)
+    /// <summary>Opens a document, at the position it was left in last time if that is known.</summary>
+    public void Open(PdfFile pdf, DocPosition? start = null)
     {
         Close();
         _pdf = pdf;
         _rows = BuildRows();
-        _currentPage = Math.Clamp(startPage, 0, Math.Max(0, pdf.PageCount - 1));
-        _rotation = 0;
-        _pendingGoto = null;
-        ApplyLayout(keepAnchor: false);
-        if (_result == null) _pendingGoto = _currentPage; // the window has no size yet: jump once it has
-        else GoToPage(_currentPage);
+        _currentPage = Math.Clamp(start?.Page ?? 0, 0, Math.Max(0, pdf.PageCount - 1));
+        _rotation = (start?.Rotation ?? 0) & 3;
+        if (start?.ZoomMode is { } mode)
+        {
+            _zoomMode = mode;
+            if (mode == ZoomMode.Custom) _zoom = Math.Clamp(start.Zoom, PageLayoutEngine.MinZoom, PageLayoutEngine.MaxZoom);
+        }
+        _pendingPosition = start ?? new DocPosition { Page = _currentPage };
+        ApplyLayout(keepAnchor: false); // when the window has no size yet this waits, and the position is applied by the first layout
         RaiseStateChanged();
         Focus();
+    }
+
+    /// <summary>Where the document is now: the page at the top of the window, how far down it, and how it is viewed.</summary>
+    public DocPosition? CapturePosition()
+    {
+        if (_pdf == null || _result == null || _rows.Count == 0) return null;
+        double v = _scroll.VerticalOffset;
+        // the last row whose top is at or above the top of the window
+        int lo = 0, hi = _rows.Count - 1;
+        while (lo < hi)
+        {
+            int mid = (lo + hi + 1) / 2;
+            if (RowTopOffset(mid) <= v + 1) lo = mid; else hi = mid - 1;
+        }
+        double height = Math.Max(1, _result.RowRects[lo].Height);
+        return new DocPosition
+        {
+            Page = _rows[lo][0],
+            OffsetY = Math.Clamp((v - RowTopOffset(lo)) / height, 0, 1),
+            ZoomMode = _zoomMode,
+            Zoom = EffectiveZoom,
+            Rotation = _rotation,
+        };
+    }
+
+    /// <summary>The vertical offset that puts a row at the top of the window (the same one <see cref="GoToPage"/> scrolls to).</summary>
+    double RowTopOffset(int row) => IsPaged ? _result!.RowSlots[row].Top : Math.Max(0, _result!.RowRects[row].Top - PageMargin);
+
+    void ApplyPendingPosition()
+    {
+        if (_pendingPosition is not { } p || _result == null || _rows.Count == 0) return;
+        _pendingPosition = null;
+        int page = Math.Clamp(p.Page, 0, _pdf!.PageCount - 1);
+        GoToPage(page);
+        if (p.OffsetY <= 0) return;
+        int row = PageLayoutEngine.RowOfPage(_rows, page);
+        double target = RowTopOffset(row) + p.OffsetY * _result.RowRects[row].Height;
+        if (IsPaged)
+        {
+            var (min, max) = RowScrollRange(row);
+            target = Math.Clamp(target, min, max);
+        }
+        _scroll.ScrollToVerticalOffset(Math.Max(0, target));
+        UpdateVisible();
     }
 
     /// <summary>
@@ -197,6 +248,7 @@ public sealed partial class PdfViewer : Grid
         _pdf = null;
         _result = null;
         _rows = [];
+        _pendingPosition = null;
         _currentPage = 0;
         ClearSelection();
         ClearSearchHighlights();
@@ -266,7 +318,7 @@ public sealed partial class PdfViewer : Grid
         }
         finally { _inLayout = false; }
         UpdateVisible();
-        if (_pendingGoto is { } pending) { _pendingGoto = null; GoToPage(pending); }
+        ApplyPendingPosition();
         RaiseStateChanged();
     }
 
@@ -364,6 +416,7 @@ public sealed partial class PdfViewer : Grid
     {
         if (_inLayout || _pdf == null) return;
         UpdateVisible();
+        ViewMoved?.Invoke(this, EventArgs.Empty);
         if (IsPaged && e.VerticalChange != 0)
         {
             _snapTimer.Stop();
