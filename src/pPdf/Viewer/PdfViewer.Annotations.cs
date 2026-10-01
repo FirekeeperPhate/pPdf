@@ -168,6 +168,14 @@ public sealed partial class PdfViewer
         }
     }
 
+    /// <summary>Ends any text box being typed in, so its text is part of the annotations (before saving, printing, closing).</summary>
+    public void CommitEdits()
+    {
+        foreach (var slot in _slots.Values.ToArray())
+            foreach (var c in slot.AnnotationLayer.Children.OfType<AnnotationControl>().ToArray())
+                if (c.IsEditing) c.EndEdit(restoreFocus: false);
+    }
+
     public void DeleteSelected()
     {
         if (_selectedAnnotation is { } a)

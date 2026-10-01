@@ -11,6 +11,8 @@ public partial class MainWindow
     void InitSidebar()
     {
         ThumbList.ItemsSource = null;
+        // after a click on a page the keyboard belongs to the document again (arrows, PgUp / PgDn...)
+        ThumbList.PreviewMouseLeftButtonUp += (_, _) => Viewer.Focus();
     }
 
     void LoadSidebar(PdfFile pdf)

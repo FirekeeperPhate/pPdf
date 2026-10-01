@@ -41,6 +41,7 @@ public sealed partial class PdfViewer : Grid
     int _currentRow;
     int _currentPage;
     bool _inLayout;
+    int? _pendingGoto;
     DateTime _lastFlip = DateTime.MinValue;
 
     public PdfViewer()
@@ -165,8 +166,10 @@ public sealed partial class PdfViewer : Grid
         _currentPage = Math.Clamp(startPage, 0, Math.Max(0, pdf.PageCount - 1));
         _currentRow = PageLayoutEngine.RowOfPage(_rows, _currentPage);
         _rotation = 0;
+        _pendingGoto = null;
         ApplyLayout(keepAnchor: false);
-        GoToPage(_currentPage);
+        if (_result == null) _pendingGoto = _currentPage; // the window has no size yet: jump once it has
+        else GoToPage(_currentPage);
         RaiseStateChanged();
         Focus();
     }
@@ -251,6 +254,7 @@ public sealed partial class PdfViewer : Grid
         }
         finally { _inLayout = false; }
         UpdateVisible();
+        if (_pendingGoto is { } pending) { _pendingGoto = null; GoToPage(pending); }
         RaiseStateChanged();
     }
 

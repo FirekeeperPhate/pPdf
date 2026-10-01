@@ -82,8 +82,21 @@ public sealed partial class ImageAnnotation : Annotation
     public static ImageAnnotation FromBytes(byte[] data)
     {
         var src = DecodeBitmap(data);
+        // only PNG and JPEG are embedded as they are; anything else (GIF, TIFF, BMP, WebP...) is converted once, here,
+        // so saving never depends on which codecs PDFsharp understands
+        if (!IsPng(data) && !IsJpeg(data))
+        {
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(src));
+            using var ms = new MemoryStream();
+            encoder.Save(ms);
+            data = ms.ToArray();
+        }
         return new ImageAnnotation { Data = data, Source = src, NaturalSize = new Size(src.PixelWidth, src.PixelHeight) };
     }
+
+    static bool IsPng(byte[] d) => d.Length > 8 && d[0] == 0x89 && d[1] == 0x50 && d[2] == 0x4E && d[3] == 0x47;
+    static bool IsJpeg(byte[] d) => d.Length > 3 && d[0] == 0xFF && d[1] == 0xD8 && d[2] == 0xFF;
 
     public static ImageAnnotation FromBitmap(BitmapSource bitmap)
     {

@@ -138,6 +138,7 @@ public partial class MainWindow : Window
 
     void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        Viewer.CommitEdits();
         if (!_forceClose && Viewer.Annotations.IsDirty)
         {
             e.Cancel = true;
@@ -159,6 +160,7 @@ public partial class MainWindow : Window
     /// <summary>If there are annotations that were never written into a PDF, ask what to do. False = the user cancelled.</summary>
     async Task<bool> ConfirmDiscardAnnotationsAsync()
     {
+        Viewer.CommitEdits();
         if (!Viewer.Annotations.IsDirty) return true;
         var answer = MessageBox.Show(this,
             "The annotations you added are not saved in a PDF yet.\n\nSave a copy with the annotations before continuing?",
@@ -245,6 +247,7 @@ public partial class MainWindow : Window
         _settings.AddRecent(path, start);
         BuildRecentList();
         LoadSidebar(pdf);
+        if (FindBar.Visibility == Visibility.Visible && FindBox.Text.Length > 0) RunSearch();
         UpdateUi();
         Viewer.Focus();
     }
@@ -496,6 +499,7 @@ public partial class MainWindow : Window
     async Task<bool> SaveCopyAsync()
     {
         if (_pdf == null || _busy) return false;
+        Viewer.CommitEdits();
         string name = Path.GetFileNameWithoutExtension(_path) ?? "document";
         var dlg = new SaveFileDialog
         {
@@ -521,7 +525,10 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             SetBusy(false);
-            MessageBox.Show(this, "The file could not be saved.\n\n" + ex.Message, "pPdf", MessageBoxButton.OK, MessageBoxImage.Error);
+            string reason = ex.Message.Contains("owner password", StringComparison.OrdinalIgnoreCase)
+                ? "This PDF is protected and does not allow changes without its owner password, so annotations cannot be written into it.\nYou can still print it with the annotations."
+                : ex.Message;
+            MessageBox.Show(this, "The file could not be saved.\n\n" + reason, "pPdf", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
         finally { SetBusy(false); }
@@ -532,6 +539,7 @@ public partial class MainWindow : Window
     async Task PrintAsync()
     {
         if (_pdf == null || _busy) return;
+        Viewer.CommitEdits();
         var dlg = new PrintDialog { MinPage = 1, MaxPage = (uint)_pdf.PageCount, UserPageRangeEnabled = true };
         if (dlg.ShowDialog() != true) return;
 

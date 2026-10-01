@@ -90,7 +90,16 @@ public static class PdfAnnotationWriter
         foreach (var line in lines)
         {
             if (line.Length > 0)
-                gfx.DrawString(line, font, brush, new XPoint(t.X + TextAnnotation.Padding, y), XStringFormats.BaseLineLeft);
+            {
+                var at = new XPoint(t.X + TextAnnotation.Padding, y);
+                try { gfx.DrawString(line, font, brush, at, XStringFormats.BaseLineLeft); }
+                catch (Exception)
+                {
+                    // a font PDFsharp cannot embed (e.g. CFF-based OpenType): one odd font must not lose the whole save
+                    font = new XFont("Arial", t.FontSize, style);
+                    gfx.DrawString(line, font, brush, at, XStringFormats.BaseLineLeft);
+                }
+            }
             y += lineHeight;
         }
     }
