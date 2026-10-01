@@ -29,6 +29,11 @@ public sealed class AppSettings
     public bool MatchCase { get; set; }
     public bool WholeWord { get; set; }
 
+    public bool CheckForUpdates { get; set; } = true;
+    public DateTime? LastUpdateCheck { get; set; }
+    /// <summary>A version the user chose not to be offered again.</summary>
+    public string? SkippedVersion { get; set; }
+
     public string TextFont { get; set; } = "Arial";
     public double TextSize { get; set; } = 14;
     public bool TextBold { get; set; }

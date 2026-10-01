@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         InitSidebar();
         BuildRecentList();
         UpdateUi();
+        ScheduleStartupUpdateCheck();
     }
 
     // ------------------------------------------------------------------ settings
@@ -467,6 +468,13 @@ public partial class MainWindow : Window
         var save = new MenuItem { Header = "Save a copy with annotations...", IsEnabled = _pdf != null };
         save.Click += (_, _) => _ = SaveCopyAsync();
         menu.Items.Add(save);
+        menu.Items.Add(new Separator());
+        var check = new MenuItem { Header = "Check for updates..." };
+        check.Click += (_, _) => _ = CheckForUpdatesAsync(manual: true);
+        menu.Items.Add(check);
+        var auto = new MenuItem { Header = "Check for updates automatically", IsCheckable = true, IsChecked = _settings.CheckForUpdates, StaysOpenOnClick = false };
+        auto.Click += (_, _) => _settings.CheckForUpdates = auto.IsChecked;
+        menu.Items.Add(auto);
         menu.Items.Add(new Separator());
         var help = new MenuItem { Header = "Keyboard shortcuts" };
         help.Click += (_, _) => ShowShortcuts();

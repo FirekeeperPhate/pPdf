@@ -46,6 +46,8 @@ WizardStyle=modern dynamic
 Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=yes
+; Created by the running app: setup and uninstall ask to close pPdf first
+AppMutex=pPdf.Running
 ChangesAssociations=yes
 
 [Languages]
@@ -84,6 +86,9 @@ Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueNa
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; Update started by pPdf itself (/SILENT /RELAUNCH=1 /OPEN="file"): start it again on that file,
+; as the user who ran it (not elevated, also for an all-users install).
+Filename: "{app}\{#AppExe}"; Parameters: "{code:RelaunchParameters}"; Flags: nowait runasoriginaluser; Check: ShouldRelaunch
 
 [Code]
 { Switching edition (Full <-> Light) or upgrading: remove the previous program files so no
@@ -129,6 +134,59 @@ begin
   RegDeleteKeyIncludingSubkeys(HKA, 'Software\pPdf\Capabilities');
   RegDeleteValue(HKA, 'Software\RegisteredApplications', 'pPdf');
   RegDeleteValue(HKA, 'Software\Classes\.pdf\OpenWithProgids', 'pPdf.Document');
+end;
+
+function OpenEvent(dwDesiredAccess: DWORD; bInheritHandle: BOOL; lpName: String): THandle;
+external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(hEvent: THandle): BOOL;
+external 'SetEvent@kernel32.dll stdcall';
+function CloseHandle(hObject: THandle): BOOL;
+external 'CloseHandle@kernel32.dll stdcall';
+
+{ Update started by pPdf (/NOTIFYPID=<its process id>): tell it that setup is really starting
+  (after the UAC prompt of an all-users install; if that is refused, pPdf stays open), then
+  give it time to close before the AppMutex check, which comes after InitializeSetup. }
+procedure ReleasePPdf;
+var
+  Pid: Integer;
+  Ready: THandle;
+  Waited: Integer;
+begin
+  Pid := StrToIntDef(ExpandConstant('{param:NOTIFYPID|0}'), 0);
+  if Pid > 0 then
+  begin
+    Ready := OpenEvent($0002 { EVENT_MODIFY_STATE }, False, 'pPdf.UpdateReady.' + IntToStr(Pid));
+    if Ready <> 0 then
+    begin
+      SetEvent(Ready);
+      CloseHandle(Ready);
+    end;
+  end;
+  if ExpandConstant('{param:RELAUNCH|0}') = '1' then
+  begin
+    Waited := 0;
+    while CheckForMutexes('pPdf.Running') and (Waited < 15000) do
+    begin
+      Sleep(250);
+      Waited := Waited + 250;
+    end;
+  end;
+end;
+
+function ShouldRelaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;
+
+function RelaunchParameters(Param: String): String;
+var
+  FileToOpen: String;
+begin
+  FileToOpen := ExpandConstant('{param:OPEN|}');
+  if FileToOpen <> '' then
+    Result := AddQuotes(FileToOpen)
+  else
+    Result := '';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -199,5 +257,13 @@ begin
       IDCANCEL:
         Result := False;
     end;
+  if Result then
+    ReleasePPdf;
+end;
+#else
+function InitializeSetup: Boolean;
+begin
+  ReleasePPdf;
+  Result := True;
 end;
 #endif

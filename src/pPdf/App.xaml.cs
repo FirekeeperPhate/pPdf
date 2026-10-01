@@ -6,6 +6,14 @@ namespace pPdf;
 
 public partial class App : Application
 {
+    /// <summary>Tells the installer and the uninstaller that pPdf is running (AppMutex in pPdf.iss).</summary>
+    static Mutex? _runningMutex;
+
+    public App()
+    {
+        _runningMutex = new Mutex(false, "pPdf.Running");
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
