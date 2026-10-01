@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
+- The scroll bar now spans the whole document in the single-page and two-page views too (it only covered the current page). The wheel, the arrows and PgUp / PgDn stay inside a page and then turn it; dragging the scroll bar settles on one page.
 - One pPdf process for everything: starting pPdf again (for example a double-click on another PDF) hands the file to the running one, which opens it in a new window. Three documents now take about 215 MB in total instead of about 450 MB. Ctrl+N or More > New window opens an empty window.
 - Lower memory: the page cache is sized on your screen (about three screens of bitmaps, between 64 and 192 MB) instead of a fixed 384 MB and is shared by all windows; after 20 seconds minimized the bitmaps and caches are released and the working set drops to a few MB.
 - Very big PDFs (over 64 MB) are read from disk when needed instead of being loaded into memory; while one is open it cannot be overwritten.
