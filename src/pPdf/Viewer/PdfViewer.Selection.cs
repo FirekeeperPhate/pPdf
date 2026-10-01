@@ -86,6 +86,7 @@ public sealed partial class PdfViewer
     void OnSlotCreated(PageSlot slot)
     {
         PopulateAnnotations(slot);
+        RebuildForm(slot);
         if (_texts.ContainsKey(slot.PageIndex)) RefreshOverlays(slot);
         else EnsureText(slot.PageIndex);
     }

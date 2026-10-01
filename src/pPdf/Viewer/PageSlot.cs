@@ -45,6 +45,8 @@ sealed class PageSlot : Canvas
     public Canvas Overlay { get; } = new() { ClipToBounds = true, Background = Brushes.Transparent };
     public RectsLayer SearchLayer { get; } = new();
     public RectsLayer SelectionLayer { get; } = new();
+    /// <summary>The controls of the form fields on this page (page space), under the annotations.</summary>
+    public Canvas FormLayer { get; } = new();
     public Canvas AnnotationLayer { get; } = new();
 
     public double Scale { get; private set; } = 1;
@@ -67,6 +69,7 @@ sealed class PageSlot : Canvas
         Overlay.Height = size.Height;
         Overlay.Children.Add(SearchLayer);
         Overlay.Children.Add(SelectionLayer);
+        Overlay.Children.Add(FormLayer);
         Overlay.Children.Add(AnnotationLayer);
         Children.Add(Overlay);
         RenderOptions.SetBitmapScalingMode(_bitmap, BitmapScalingMode.HighQuality);

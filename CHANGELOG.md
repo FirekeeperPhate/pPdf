@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Annotations are kept**: text boxes, images and markups you add are saved automatically (a moment after each change, and when you close) in `%AppData%\pPdf\annotations` and come back, still editable, the next time you open the same file. Closing no longer asks to save: *Save a copy* is only for writing them into a PDF. The PDF itself is never modified.
+- **Highlight, underline and strike-through** of the selected text (toolbar, with a color picker). Click marked text to select the markup and change its kind or color, or delete it. Saved into the copy, printed and exported.
+- **Fillable PDF forms** (AcroForm): text fields (single and multi-line), check boxes, radio buttons, combo boxes and lists are shown as controls on the page and can be filled in. The values are kept like annotations, written into the copy you save (with appearances, so any viewer shows them), and printed / exported.
+- **Night mode keeps the colors**: it flips the lightness only (white paper becomes soft dark gray), so photos and charts no longer turn into negatives.
+- **Back / forward**: after a link, an outline entry, a thumbnail, "go to page" or a search jump you can return with Alt+Left (and forward with Alt+Right, or the mouse back / forward buttons, or the toolbar arrows). Ctrl+G jumps to the page box. F11 shows the document full screen.
+- **Document properties**, **Show in folder**, **Copy file path** and **Export this page as an image** (PNG or JPEG, 150 / 300 / 600 dpi, with annotations and form values) in the More menu.
+- Smoother wheel scrolling (a short glide).
+- The toolbar wraps onto a second row when the window is narrow instead of hiding buttons.
+
+
 ## 0.1.5
 
 - pPdf remembers where each document was left: the exact point in the page (not just the page), the zoom and the rotation, for the last 200 documents. The position is also written a few seconds after you stop scrolling, so even a crash does not lose it. Positions saved by older versions (page only) are still used.

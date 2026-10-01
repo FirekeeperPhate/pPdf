@@ -15,26 +15,29 @@ public static class PageComposer
     /// <paramref name="pixelWidth"/> x <paramref name="pixelHeight"/>, then the annotations of that page.
     /// </summary>
     public static void Draw(DrawingContext dc, PdfFile pdf, int page, Rect dest, int rotation, int pixelWidth, int pixelHeight,
-        IReadOnlyList<Annotation> annotations)
+        IReadOnlyList<Annotation> annotations, Forms.FormModel? form = null)
     {
         var bmp = pdf.Render(page, pixelWidth, pixelHeight, new Int32Rect(0, 0, pixelWidth, pixelHeight), rotation, invert: false, printing: true);
         if (bmp != null) dc.DrawImage(bmp, dest);
 
         var mine = annotations.Where(a => a.Page == page).ToList();
-        if (mine.Count == 0) return;
+        bool hasForm = form != null && form.OnPage(page).Any();
+        if (mine.Count == 0 && !hasForm) return;
         var size = pdf.Pages[page];
         double fit = (rotation & 1) == 1 ? dest.Width / size.Height : dest.Width / size.Width;
         var m = PageSlot.OverlayMatrix(size, fit, rotation);
         m.Translate(dest.X, dest.Y);
         dc.PushClip(new RectangleGeometry(dest));
         dc.PushTransform(new MatrixTransform(m));
+        // the values typed into the form fields sit under the annotations
+        if (hasForm) Forms.FormDrawing.Draw(dc, form!, page);
         foreach (var a in mine) AnnotationDrawing.Draw(dc, a);
         dc.Pop();
         dc.Pop();
     }
 
-    /// <summary>A page as an image, at <paramref name="dpi"/>, with its annotations.</summary>
-    public static BitmapSource RenderImage(PdfFile pdf, int page, int dpi, int rotation, IReadOnlyList<Annotation> annotations)
+    /// <summary>A page as an image, at <paramref name="dpi"/>, with its annotations and form values.</summary>
+    public static BitmapSource RenderImage(PdfFile pdf, int page, int dpi, int rotation, IReadOnlyList<Annotation> annotations, Forms.FormModel? form = null)
     {
         var size = pdf.Pages[page];
         bool turned = (rotation & 1) == 1;
@@ -50,7 +53,7 @@ public static class PageComposer
         using (var dc = visual.RenderOpen())
         {
             dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, dipW, dipH));
-            Draw(dc, pdf, page, new Rect(0, 0, dipW, dipH), rotation, pxW, pxH, annotations);
+            Draw(dc, pdf, page, new Rect(0, 0, dipW, dipH), rotation, pxW, pxH, annotations, form);
         }
         var rtb = new RenderTargetBitmap(pxW, pxH, dpi, dpi, PixelFormats.Pbgra32);
         rtb.Render(visual);

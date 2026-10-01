@@ -307,6 +307,7 @@ public sealed partial class PdfViewer : Grid
         _result = null;
         _rows = [];
         _pendingPosition = null;
+        SetForm(null);
         StopSmoothing();
         ClearHistory();
         _currentPage = 0;

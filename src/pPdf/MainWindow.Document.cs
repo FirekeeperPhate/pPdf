@@ -51,12 +51,13 @@ public partial class MainWindow
         var pdf = _pdf;
         int page = Viewer.CurrentPage, rotation = Viewer.Rotation;
         var annotations = Viewer.Annotations.Items.ToList();
+        var form = Viewer.Form;
         bool jpeg = dlg.FilterIndex == 2 || dlg.FileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || dlg.FileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
         SetBusy(true, "Exporting...");
         try
         {
             // WPF drawing needs this thread: PDFium does the heavy part, the encoding follows off it
-            var image = PageComposer.RenderImage(pdf, page, dpi, rotation, annotations);
+            var image = PageComposer.RenderImage(pdf, page, dpi, rotation, annotations, form);
             await Task.Run(() =>
             {
                 BitmapEncoder encoder = jpeg ? new JpegBitmapEncoder { QualityLevel = 92 } : new PngBitmapEncoder();

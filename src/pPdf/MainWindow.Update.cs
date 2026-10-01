@@ -1,4 +1,5 @@
 using System.Windows;
+using pPdf.Annotations;
 using pPdf.Services;
 using pPdf.Views;
 
@@ -19,6 +20,7 @@ public partial class MainWindow
         _startupCheckScheduled = true;
         if (Environment.GetEnvironmentVariable("PPDF_NO_STARTUP") == "1") return; // UI test harness
         _ = Task.Run(UpdateService.CleanUp);
+        _ = Task.Run(() => AnnotationPersistence.Default.Prune());
         _ = Dispatcher.InvokeAsync(async () =>
         {
             await Task.Delay(3000);

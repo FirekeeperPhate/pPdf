@@ -18,12 +18,15 @@ public sealed class PdfPaginator : DocumentPaginator
 
     /// <param name="pages">0-based page indices to print, in order.</param>
     /// <param name="viewRotation">Quarter turns the user rotated the view by; printed pages follow it.</param>
-    public PdfPaginator(PdfFile pdf, int[] pages, IReadOnlyList<Annotation> annotations, int viewRotation)
+    readonly Forms.FormModel? _form;
+
+    public PdfPaginator(PdfFile pdf, int[] pages, IReadOnlyList<Annotation> annotations, int viewRotation, Forms.FormModel? form = null)
     {
         _pdf = pdf;
         _pages = pages;
         _annotations = annotations;
         _viewRotation = viewRotation & 3;
+        _form = form;
     }
 
     public override bool IsPageCountValid => true;
@@ -57,7 +60,7 @@ public sealed class PdfPaginator : DocumentPaginator
         using (var dc = visual.RenderOpen())
         {
             dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, area.Width, area.Height));
-            PageComposer.Draw(dc, _pdf, page, new Rect(x, y, dipW, dipH), rotation, pxW, pxH, _annotations);
+            PageComposer.Draw(dc, _pdf, page, new Rect(x, y, dipW, dipH), rotation, pxW, pxH, _annotations, _form);
         }
         return new DocumentPage(visual, area, new Rect(area), new Rect(area));
     }

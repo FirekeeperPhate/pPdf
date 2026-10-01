@@ -45,6 +45,7 @@ public partial class MainWindow : Window
         Viewer.SelectionChanged += (_, _) => UpdateUi();
         Viewer.HistoryChanged += (_, _) => UpdateUi();
         Viewer.Annotations.HistoryChanged += UpdateUi;
+        InitAnnotationKeeping();
 
         InitMemoryTrim();
         InitPositionSaving();
@@ -184,13 +185,12 @@ public partial class MainWindow : Window
 
     void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // the annotations are kept for the next time: nothing to ask
         Viewer.CommitEdits();
-        if (!_forceClose && Viewer.Annotations.IsDirty)
-        {
-            e.Cancel = true;
-            _ = CloseAfterAskingAsync();
-            return;
-        }
+        FlushAnnotations();
+        // closing the view empties the store: that must not be saved over what was kept
+        _keepSuspended = true;
+        _keepTimer.Stop();
         SaveSettings();
         Viewer.Close();
         _pdf?.Dispose();
@@ -287,7 +287,11 @@ public partial class MainWindow : Window
         CloseDocument(saveRecent: true);
         _pdf = pdf;
         _path = path;
+        _keepSuspended = true; // opening empties and refills the store: not a change made by the user
         Viewer.Open(pdf, _settings.FindPosition(path));
+        _keepSuspended = false;
+        RestoreKeptAnnotations(path, pdf);
+        _ = LoadFormAsync(pdf);
         WelcomePanel.Visibility = Visibility.Collapsed;
         _settings.AddRecent(path);
         BuildRecentList();
@@ -325,8 +329,11 @@ public partial class MainWindow : Window
     {
         if (_pdf == null) return;
         if (saveRecent) RememberPosition();
+        FlushAnnotations();
         ResetSearch();
+        _keepSuspended = true; // closing the view empties the store: that is not "the user deleted everything"
         Viewer.Close();
+        _keepSuspended = false;
         var old = _pdf;
         _pdf = null;
         _path = null;
@@ -406,7 +413,8 @@ public partial class MainWindow : Window
             var parts = new List<string>();
             if (hasDoc) parts.Add($"Page {Viewer.CurrentPage + 1} of {_pdf!.PageCount}");
             if (hasDoc) parts.Add(Math.Round(Viewer.EffectiveZoom * 100).ToString(CultureInfo.InvariantCulture) + "%");
-            if (!Viewer.Annotations.IsEmpty) parts.Add($"{Viewer.Annotations.Items.Count} annotation" + (Viewer.Annotations.Items.Count == 1 ? "" : "s") + (Viewer.Annotations.IsDirty ? " (not saved)" : ""));
+            if (Viewer.Form is { } form) parts.Add(form.Fields.Count == 1 ? "form: 1 field" : $"form: {form.Fields.Count} fields");
+            if (!Viewer.Annotations.IsEmpty) parts.Add($"{Viewer.Annotations.Items.Count} annotation" + (Viewer.Annotations.Items.Count == 1 ? "" : "s"));
             StatusRight.Text = string.Join("   ·   ", parts);
 
             SyncSidebarSelection();
@@ -636,10 +644,11 @@ public partial class MainWindow : Window
 
         var pdf = _pdf;
         var anns = Viewer.Annotations.Items.ToList();
+        var formValues = Viewer.Form?.ChangedValues() ?? [];
         SetBusy(true, "Saving...");
         try
         {
-            byte[] bytes = await Task.Run(() => anns.Count == 0 ? pdf.GetBytes() : PdfAnnotationWriter.Apply(pdf.GetBytes(), pdf.Password, anns));
+            byte[] bytes = await Task.Run(() => anns.Count == 0 && formValues.Count == 0 ? pdf.GetBytes() : PdfAnnotationWriter.Apply(pdf.GetBytes(), pdf.Password, anns, formValues));
             await File.WriteAllBytesAsync(dlg.FileName, bytes);
             Viewer.Annotations.MarkSaved();
             UpdateUi();
@@ -671,7 +680,7 @@ public partial class MainWindow : Window
             : Enumerable.Range(0, _pdf.PageCount).ToArray();
         if (pages.Length == 0) return;
 
-        var paginator = new PdfPaginator(_pdf, pages, Viewer.Annotations.Items.ToList(), Viewer.Rotation)
+        var paginator = new PdfPaginator(_pdf, pages, Viewer.Annotations.Items.ToList(), Viewer.Rotation, Viewer.Form)
         {
             PageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight),
         };

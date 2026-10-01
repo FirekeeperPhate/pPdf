@@ -18,13 +18,13 @@
 
         <!-- ============================== main toolbar ============================== -->
         <Border x:Name="MainToolbar" Grid.Row="0" Background="{DynamicResource BarBackgroundBrush}" BorderBrush="{DynamicResource BarBorderBrush}" BorderThickness="0,0,0,1" Padding="6,4">
-            <DockPanel LastChildFill="False">
+            <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="ThemeButton" Style="{StaticResource ToolButton}" Content="&#xE793;" ToolTip="Theme: light / dark / system" Click="OnThemeClick" />
                     <Button x:Name="MoreButton" Style="{StaticResource ToolButton}" Content="&#xE712;" ToolTip="More" Click="OnMoreClick" />
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                <WrapPanel Orientation="Horizontal" ItemHeight="36" VerticalAlignment="Center">
                     <Button Style="{StaticResource ToolButton}" Content="&#xE8E5;" ToolTip="Open (Ctrl+O)" Click="OnOpenClick" />
                     <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" Content="&#xE74E;" ToolTip="Save a copy with the annotations (Ctrl+S)" Click="OnSaveClick" />
                     <Button x:Name="PrintButton" Style="{StaticResource ToolButton}" Content="&#xE749;" ToolTip="Print (Ctrl+P)" Click="OnPrintClick" />
@@ -75,7 +75,7 @@
                     <Border Style="{StaticResource ToolSeparator}" />
 
                     <ToggleButton x:Name="FindToggle" Style="{StaticResource ToolToggle}" Content="&#xE721;" ToolTip="Find (Ctrl+F)" Click="OnFindToggle" />
-                </StackPanel>
+                </WrapPanel>
             </DockPanel>
         </Border>
 

@@ -56,6 +56,15 @@ public sealed class AnnotationStore
         Push(new UndoEntry("Add", () => { foreach (var a in group) RemoveCore(a); }, () => { foreach (var a in group) AddCore(a); }));
     }
 
+    /// <summary>Puts back annotations kept from an earlier session: no undo step, and nothing counts as changed.</summary>
+    public void LoadKept(IEnumerable<Annotation> items)
+    {
+        foreach (var a in items) AddCore(a);
+        _savedDepth = _undo.Count;
+        _everModified = false;
+        HistoryChanged?.Invoke();
+    }
+
     public void Remove(Annotation a)
     {
         if (!_items.Contains(a)) return;

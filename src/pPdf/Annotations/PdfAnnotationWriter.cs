@@ -10,7 +10,7 @@ namespace pPdf.Annotations;
 public static class PdfAnnotationWriter
 {
     /// <summary>Returns a copy of <paramref name="pdf"/> with <paramref name="annotations"/> drawn on its pages.</summary>
-    public static byte[] Apply(byte[] pdf, string? password, IReadOnlyList<Annotation> annotations)
+    public static byte[] Apply(byte[] pdf, string? password, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues = null)
     {
         using var input = new MemoryStream(pdf, writable: false);
         using var doc = password == null
@@ -35,6 +35,9 @@ public static class PdfAnnotationWriter
             }
         }
 
+        // what the user typed into the form fields
+        if (formValues is { Count: > 0 }) Forms.FormPdf.Apply(doc, formValues);
+
         using var output = new MemoryStream();
         doc.Save(output, false);
         return output.ToArray();
@@ -44,31 +47,7 @@ public static class PdfAnnotationWriter
     /// Maps display space (points from the top-left of the page as it is shown, i.e. after /Rotate and cropped to the CropBox)
     /// to the coordinate system XGraphics draws in (points from the top-left of the unrotated MediaBox, y pointing down).
     /// </summary>
-    internal static XMatrix DisplayToPage(PdfPage page)
-    {
-        var media = Normalize(page.MediaBox);
-        var crop = page.Elements.ContainsKey("/CropBox") ? Intersect(Normalize(page.CropBox), media) : media;
-        double ml = media.L, mt = media.T;
-        double cl = crop.L, cb = crop.B, cr = crop.R, ct = crop.T;
-        int rotate = ((page.Rotate % 360) + 360) % 360;
-        return rotate switch
-        {
-            90 => new XMatrix(0, -1, 1, 0, cl - ml, mt - cb),
-            180 => new XMatrix(-1, 0, 0, -1, cr - ml, mt - cb),
-            270 => new XMatrix(0, 1, -1, 0, cr - ml, mt - ct),
-            _ => new XMatrix(1, 0, 0, 1, cl - ml, mt - ct),
-        };
-    }
-
-    readonly record struct Box(double L, double B, double R, double T);
-
-    static Box Normalize(PdfRectangle r) => new(Math.Min(r.X1, r.X2), Math.Min(r.Y1, r.Y2), Math.Max(r.X1, r.X2), Math.Max(r.Y1, r.Y2));
-
-    static Box Intersect(Box a, Box b)
-    {
-        var r = new Box(Math.Max(a.L, b.L), Math.Max(a.B, b.B), Math.Min(a.R, b.R), Math.Min(a.T, b.T));
-        return r.R > r.L && r.T > r.B ? r : b;
-    }
+    internal static XMatrix DisplayToPage(PdfPage page) => Forms.PageGeometry.Of(page).DisplayToGraphics();
 
     static void DrawText(XGraphics gfx, TextAnnotation t)
     {

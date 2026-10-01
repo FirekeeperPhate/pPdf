@@ -68,6 +68,25 @@
                 <Setter Property="HorizontalAlignment" Value="Center" />
             </Style>
 
+            <!-- the box of a form field: tinted like the field highlighting of a PDF reader, a clear border while typing -->
+            <Style x:Key="FormFieldBox" TargetType="TextBox">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TextBox">
+                            <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="#FF8AA4C8" BorderThickness="0.7">
+                                <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter TargetName="Box" Property="BorderBrush" Value="#FF2F80ED" />
+                                    <Setter TargetName="Box" Property="BorderThickness" Value="1.2" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- the box used while editing a text annotation in place: no chrome, it must look like the text itself -->
             <Style x:Key="AnnotationEditBox" TargetType="TextBox">
                 <Setter Property="Template">
