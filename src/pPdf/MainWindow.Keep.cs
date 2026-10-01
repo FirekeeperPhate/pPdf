@@ -69,6 +69,7 @@ public partial class MainWindow
     {
         // a very big file is read from disk on demand: not worth loading it whole to look for fields
         if (pdf.IsOnDemand || pdf.FormType != 1) return;
+        if (pdf.GetBytes().Length > 150 * 1024 * 1024) return; // reading every object of a huge file is not worth it
         var bytes = pdf.GetBytes();
         string? password = pdf.Password;
         var model = await Task.Run(() => FormPdf.Read(bytes, password));
