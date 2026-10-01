@@ -17,7 +17,7 @@
         </Grid.RowDefinitions>
 
         <!-- ============================== main toolbar ============================== -->
-        <Border Grid.Row="0" Background="{DynamicResource BarBackgroundBrush}" BorderBrush="{DynamicResource BarBorderBrush}" BorderThickness="0,0,0,1" Padding="6,4">
+        <Border x:Name="MainToolbar" Grid.Row="0" Background="{DynamicResource BarBackgroundBrush}" BorderBrush="{DynamicResource BarBorderBrush}" BorderThickness="0,0,0,1" Padding="6,4">
             <DockPanel LastChildFill="False">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="ThemeButton" Style="{StaticResource ToolButton}" Content="&#xE793;" ToolTip="Theme: light / dark / system" Click="OnThemeClick" />
@@ -33,6 +33,8 @@
                     <ToggleButton x:Name="SidebarToggle" Style="{StaticResource ToolToggle}" Content="&#xE700;" ToolTip="Pages and outline (F4)" Click="OnSidebarToggle" />
                     <Border Style="{StaticResource ToolSeparator}" />
 
+                    <Button x:Name="BackButton" Style="{StaticResource ToolButton}" Content="&#xE72B;" ToolTip="Back to where you were (Alt+Left)" Click="OnBack" />
+                    <Button x:Name="ForwardButton" Style="{StaticResource ToolButton}" Content="&#xE72A;" ToolTip="Forward (Alt+Right)" Click="OnForward" />
                     <Button x:Name="PrevButton" Style="{StaticResource ToolButton}" Content="&#xE70E;" ToolTip="Previous page" Click="OnPrevPage" />
                     <TextBox x:Name="PageBox" Width="48" HorizontalContentAlignment="Center" VerticalAlignment="Center" Margin="2,0"
                              ToolTip="Go to page" KeyDown="OnPageBoxKeyDown" GotKeyboardFocus="OnBoxGotFocus" />
@@ -61,6 +63,13 @@
 
                     <ToggleButton x:Name="TextToolButton" Style="{StaticResource ToolToggle}" Content="&#xE8D2;" ToolTip="Add text (T): click on the page" Click="OnTextTool" />
                     <Button Style="{StaticResource ToolButton}" Content="&#xE8B9;" ToolTip="Add image (I) - or paste / drop one" Click="OnAddImage" />
+                    <Border Style="{StaticResource ToolSeparator}" />
+                    <Button x:Name="HighlightButton" Style="{StaticResource ToolButton}" Content="&#xE7E6;" ToolTip="Highlight the selected text" Click="OnHighlight" />
+                    <Button x:Name="UnderlineButton" Style="{StaticResource ToolButton}" Content="&#xE8DC;" ToolTip="Underline the selected text" Click="OnUnderline" />
+                    <Button x:Name="StrikeButton" Style="{StaticResource ToolButton}" ToolTip="Strike through the selected text" Click="OnStrike">
+                        <TextBlock Text="S" FontFamily="Segoe UI" FontSize="15" FontWeight="SemiBold" TextDecorations="Strikethrough" />
+                    </Button>
+                    <views:ColorPickerButton x:Name="MarkupColorButton" Glyph="&#xE790;" Tip="Color of highlights and lines" ValueChanged="OnMarkupColorChanged" />
                     <Button x:Name="UndoButton" Style="{StaticResource ToolButton}" Content="&#xE7A7;" ToolTip="Undo (Ctrl+Z)" Click="OnUndo" />
                     <Button x:Name="RedoButton" Style="{StaticResource ToolButton}" Content="&#xE7A6;" ToolTip="Redo (Ctrl+Y)" Click="OnRedo" />
                     <Border Style="{StaticResource ToolSeparator}" />
@@ -83,6 +92,7 @@
                     <views:ColorPickerButton x:Name="TextColorButton" Glyph="&#xE8D3;" Tip="Text color" ValueChanged="OnTextColorChanged" />
                     <views:ColorPickerButton x:Name="FillColorButton" Glyph="&#xE790;" Tip="Background fill" AllowNone="True" ValueChanged="OnFillColorChanged" />
                 </StackPanel>
+                <TextBlock x:Name="MarkupHint" Text="Marked text: use the highlight / underline / strike buttons or the color to change it" Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed" />
                 <TextBlock x:Name="ImageHint" Text="Drag to move, drag the handles to resize (Ctrl for free proportions)"
                            Foreground="{DynamicResource SubtleTextBrush}" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed" />
                 <Border Style="{StaticResource ToolSeparator}" />
@@ -179,7 +189,7 @@
         </Grid>
 
         <!-- ============================== status bar ============================== -->
-        <Border Grid.Row="4" Background="{DynamicResource BarBackgroundBrush}" BorderBrush="{DynamicResource BarBorderBrush}" BorderThickness="0,1,0,0" Padding="10,3">
+        <Border x:Name="StatusBar" Grid.Row="4" Background="{DynamicResource BarBackgroundBrush}" BorderBrush="{DynamicResource BarBorderBrush}" BorderThickness="0,1,0,0" Padding="10,3">
             <DockPanel>
                 <TextBlock x:Name="StatusRight" DockPanel.Dock="Right" Foreground="{DynamicResource SubtleTextBrush}" FontSize="12" />
                 <TextBlock x:Name="StatusLeft" Foreground="{DynamicResource SubtleTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis" />

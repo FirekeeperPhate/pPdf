@@ -68,7 +68,7 @@ public partial class MainWindow
     void OnThumbSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_syncing || ThumbList.SelectedIndex < 0) return;
-        Viewer.GoToPage(ThumbList.SelectedIndex);
+        Viewer.JumpToPage(ThumbList.SelectedIndex);
     }
 
     void SyncSidebarSelection()
@@ -84,7 +84,7 @@ public partial class MainWindow
 
     void OnOutlineSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is OutlineNode { PageIndex: >= 0 } node) Viewer.GoToPage(node.PageIndex);
+        if (e.NewValue is OutlineNode { PageIndex: >= 0 } node) Viewer.JumpToPage(node.PageIndex);
     }
 
     void OnSideTabChanged(object sender, RoutedEventArgs e)

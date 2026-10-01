@@ -224,12 +224,31 @@ public sealed class PdfFile : IDisposable
         }
     }
 
+    /// <summary>
+    /// Night reading: flips the lightness but keeps the hues (the "invert + hue-rotate 180" trick), so photos and colored charts
+    /// stay recognisable instead of turning into negatives. White paper becomes a soft dark gray, black text a soft light gray.
+    /// </summary>
     static unsafe void InvertPixels(IntPtr buffer, int stride, int width, int height)
     {
+        // 255 - H*c with H the 180 degree hue rotation (luminance weights), in 10 bit fixed point; rows sum to exactly 1024
+        const int Rr = -588, Rg = 1464, Rb = 148;
+        const int Gr = 436, Gg = 440, Gb = 148;
+        const int Br = 436, Bg = 1464, Bb = -876;
+        // map 0..255 onto 24..232
+        var table = stackalloc byte[256];
+        for (int i = 0; i < 256; i++) table[i] = (byte)(24 + i * 208 / 255);
         for (int y = 0; y < height; y++)
         {
             uint* row = (uint*)((byte*)buffer + (long)y * stride);
-            for (int x = 0; x < width; x++) row[x] ^= 0x00FFFFFF;
+            for (int x = 0; x < width; x++)
+            {
+                uint p = row[x];
+                int b = (int)(p & 0xFF), g = (int)((p >> 8) & 0xFF), r = (int)((p >> 16) & 0xFF);
+                int nr = 255 - Math.Clamp((Rr * r + Rg * g + Rb * b) >> 10, 0, 255);
+                int ng = 255 - Math.Clamp((Gr * r + Gg * g + Gb * b) >> 10, 0, 255);
+                int nb = 255 - Math.Clamp((Br * r + Bg * g + Bb * b) >> 10, 0, 255);
+                row[x] = 0xFF000000u | ((uint)table[nr] << 16) | ((uint)table[ng] << 8) | table[nb];
+            }
         }
     }
 
@@ -314,6 +333,44 @@ public sealed class PdfFile : IDisposable
         double a = (x1 - x0) / (Span * K), b = (y1 - y0) / (Span * K);
         double c = (x2 - x0) / (Span * K), d = (y2 - y0) / (Span * K);
         return new DisplayMap(a, b, c, d, x0 / (double)K, y0 / (double)K);
+    }
+
+
+    // ------------------------------------------------------------------ document information
+
+    public PdfInfo ReadInfo()
+    {
+        lock (Sync)
+        {
+            if (_doc == null) return new PdfInfo("", "", "", "", "", "", null, null, "", false, false);
+            string Meta(string tag)
+            {
+                uint bytes = fpdf_doc.FPDF_GetMetaText(_doc, tag, IntPtr.Zero, 0);
+                if (bytes <= 2) return "";
+                var mem = Marshal.AllocHGlobal((int)bytes);
+                try
+                {
+                    fpdf_doc.FPDF_GetMetaText(_doc, tag, mem, bytes);
+                    return Marshal.PtrToStringUni(mem)?.Trim() ?? "";
+                }
+                finally { Marshal.FreeHGlobal(mem); }
+            }
+            int version = 0;
+            string versionText = fpdfview.FPDF_GetFileVersion(_doc, ref version) != 0 && version > 0 ? $"{version / 10}.{version % 10}" : "";
+            bool encrypted = fpdfview.FPDF_GetSecurityHandlerRevision(_doc) >= 0;
+            int formType = fpdf_formfill.FPDF_GetFormType(_doc);
+            return new PdfInfo(Meta("Title"), Meta("Author"), Meta("Subject"), Meta("Keywords"), Meta("Creator"), Meta("Producer"),
+                PdfInfo.ParseDate(Meta("CreationDate")), PdfInfo.ParseDate(Meta("ModDate")), versionText, encrypted, formType > 0);
+        }
+    }
+
+    /// <summary>1 = AcroForm, 2 / 3 = XFA; 0 = no form.</summary>
+    public int FormType
+    {
+        get
+        {
+            lock (Sync) return _doc == null ? 0 : Math.Max(0, fpdf_formfill.FPDF_GetFormType(_doc));
+        }
     }
 
     // ------------------------------------------------------------------ links

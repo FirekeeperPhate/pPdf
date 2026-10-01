@@ -15,6 +15,10 @@ namespace pPdf.Viewer;
 /// </summary>
 public sealed partial class PdfViewer : Grid
 {
+    /// <summary>The paper of a page while the colors are inverted: the same soft dark gray the night pixels use for white.</summary>
+    static readonly Brush NightPaper = Freeze(new SolidColorBrush(Color.FromRgb(24, 24, 24)));
+    static Brush Freeze(Brush b) { b.Freeze(); return b; }
+
     const double PageMargin = 14;
     const double PageGap = 10;
     const double RowGap = 12;
@@ -155,7 +159,7 @@ public sealed partial class PdfViewer : Grid
 
     void ApplyPaperBrush()
     {
-        var brush = _invert ? Brushes.Black : Brushes.White;
+        var brush = _invert ? NightPaper : Brushes.White;
         foreach (var s in _slots.Values) s.SetPaper(brush);
     }
 
@@ -210,7 +214,14 @@ public sealed partial class PdfViewer : Grid
     {
         if (_pendingPosition is not { } p || _result == null || _rows.Count == 0) return;
         _pendingPosition = null;
-        int page = Math.Clamp(p.Page, 0, _pdf!.PageCount - 1);
+        MoveTo(p);
+    }
+
+    /// <summary>Scrolls to a saved position: its page, and how far down that page.</summary>
+    void MoveTo(DocPosition p)
+    {
+        if (_pdf == null || _result == null || _rows.Count == 0) return;
+        int page = Math.Clamp(p.Page, 0, _pdf.PageCount - 1);
         GoToPage(page);
         if (p.OffsetY <= 0) return;
         int row = PageLayoutEngine.RowOfPage(_rows, page);
@@ -222,6 +233,53 @@ public sealed partial class PdfViewer : Grid
         }
         _scroll.ScrollToVerticalOffset(Math.Max(0, target));
         UpdateVisible();
+    }
+
+    // ------------------------------------------------------------------ back / forward
+
+    readonly Stack<DocPosition> _back = new();
+    readonly Stack<DocPosition> _forward = new();
+
+    public bool CanGoBack => _back.Count > 0;
+    public bool CanGoForward => _forward.Count > 0;
+    /// <summary>The list of places to go back / forward to changed.</summary>
+    public event EventHandler? HistoryChanged;
+
+    /// <summary>
+    /// A jump (a link, the outline, "go to page", a search hit...) as opposed to reading on: the place left is remembered,
+    /// so <see cref="GoBack"/> returns to it. Moving to a neighbouring page is just reading, and is not remembered.
+    /// </summary>
+    public void JumpToPage(int page)
+    {
+        if (_pdf == null) return;
+        page = Math.Clamp(page, 0, _pdf.PageCount - 1);
+        if (Math.Abs(page - _currentPage) > 1 && CapturePosition() is { } here)
+        {
+            _back.Push(here);
+            _forward.Clear();
+            HistoryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        GoToPage(page);
+    }
+
+    public void GoBack() => Travel(_back, _forward);
+    public void GoForward() => Travel(_forward, _back);
+
+    void Travel(Stack<DocPosition> from, Stack<DocPosition> to)
+    {
+        if (from.Count == 0 || CapturePosition() is not { } here) return;
+        var target = from.Pop();
+        to.Push(here);
+        MoveTo(target);
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    void ClearHistory()
+    {
+        if (_back.Count == 0 && _forward.Count == 0) return;
+        _back.Clear();
+        _forward.Clear();
+        HistoryChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -249,6 +307,8 @@ public sealed partial class PdfViewer : Grid
         _result = null;
         _rows = [];
         _pendingPosition = null;
+        StopSmoothing();
+        ClearHistory();
         _currentPage = 0;
         ClearSelection();
         ClearSearchHighlights();
@@ -434,10 +494,58 @@ public sealed partial class PdfViewer : Grid
             if (e.Delta > 0) ZoomIn(anchor); else ZoomOut(anchor);
             return;
         }
-        if (!IsPaged) return;
+        if (!IsPaged)
+        {
+            // continuous views: a glide, and a notch is a bit more than the default 48 px
+            e.Handled = true;
+            SmoothBy(-e.Delta / 120.0 * 96);
+            return;
+        }
 
         e.Handled = true;
         ScrollBy(-e.Delta / 120.0 * 48, throttleFlips: true);
+    }
+
+
+    // ------------------------------------------------------------------ smooth wheel scrolling
+
+    double _smoothTarget, _smoothLast;
+    bool _smoothing;
+
+    /// <summary>Scrolls by <paramref name="delta"/> DIPs, easing towards the target over a few frames instead of jumping.</summary>
+    void SmoothBy(double delta)
+    {
+        if (_result == null) return;
+        if (!_smoothing)
+        {
+            _smoothTarget = _smoothLast = _scroll.VerticalOffset;
+            _smoothing = true;
+            CompositionTarget.Rendering += OnSmoothFrame;
+        }
+        _smoothTarget = Math.Clamp(_smoothTarget + delta, 0, Math.Max(0, _scroll.ScrollableHeight));
+    }
+
+    void OnSmoothFrame(object? sender, EventArgs e)
+    {
+        double current = _scroll.VerticalOffset;
+        // something else moved the view (the scroll bar, a jump, a key): the wheel's glide gives way
+        if (Math.Abs(current - _smoothLast) > 1.5) { StopSmoothing(); return; }
+        double diff = _smoothTarget - current;
+        if (Math.Abs(diff) < 0.5)
+        {
+            _scroll.ScrollToVerticalOffset(_smoothTarget);
+            StopSmoothing();
+            return;
+        }
+        _smoothLast = current + diff * 0.3;
+        _scroll.ScrollToVerticalOffset(_smoothLast);
+    }
+
+    void StopSmoothing()
+    {
+        if (!_smoothing) return;
+        _smoothing = false;
+        CompositionTarget.Rendering -= OnSmoothFrame;
     }
 
     /// <summary>
@@ -447,7 +555,7 @@ public sealed partial class PdfViewer : Grid
     void ScrollBy(double delta, bool throttleFlips = false)
     {
         if (_result == null) return;
-        if (!IsPaged) { _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset + delta); return; }
+        if (!IsPaged) { StopSmoothing(); _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset + delta); return; }
 
         int row = PageLayoutEngine.RowOfPage(_rows, _currentPage);
         var (min, max) = RowScrollRange(row);
@@ -528,7 +636,7 @@ public sealed partial class PdfViewer : Grid
             if (!_slots.TryGetValue(page, out var slot))
             {
                 slot = new PageSlot(page, _pdf.Pages[page]);
-                slot.SetPaper(_invert ? Brushes.Black : Brushes.White);
+                slot.SetPaper(_invert ? NightPaper : Brushes.White);
                 _slots[page] = slot;
                 _canvas.Children.Add(slot);
                 slot.SetGeometry(_result.PageRects[page], _result.Scale, _rotation);

@@ -34,6 +34,8 @@ public sealed class AppSettings
     /// <summary>A version the user chose not to be offered again.</summary>
     public string? SkippedVersion { get; set; }
 
+    public string MarkupColor { get; set; } = "#FFFFEB3B";
+
     public string TextFont { get; set; } = "Arial";
     public double TextSize { get; set; } = 14;
     public bool TextBold { get; set; }

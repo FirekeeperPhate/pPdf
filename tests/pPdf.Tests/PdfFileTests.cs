@@ -66,7 +66,7 @@ public class PdfFileTests
 
         var inverted = pdf.Render(0, 595, 842, new Int32Rect(0, 0, 100, 100), 0, true)!;
         inverted.CopyPixels(new Int32Rect(2, 2, 1, 1), px, 4, 0);
-        Assert.Equal(0, px[0]);
+        Assert.Equal(24, px[0]); // night mode: white paper becomes a soft dark gray
 
         // a region deep inside a heavily zoomed page costs only its own size
         var tile = pdf.Render(0, 5950, 8420, new Int32Rect(500, 400, 300, 200), 0, false)!;
@@ -143,5 +143,97 @@ public class OnDemandFileTests
         PdfFile.OnDemandThreshold = 100;
         try { Assert.Throws<PdfException>(() => PdfFile.Open(path)); File.Delete(path); }
         finally { PdfFile.OnDemandThreshold = old; if (File.Exists(path)) File.Delete(path); }
+    }
+}
+
+public class NightModeTests
+{
+    static byte[] PageWithBlocks()
+    {
+        var doc = new PdfSharp.Pdf.PdfDocument();
+        var page = doc.AddPage();
+        page.Width = PdfSharp.Drawing.XUnit.FromPoint(200);
+        page.Height = PdfSharp.Drawing.XUnit.FromPoint(100);
+        using (var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(page))
+        {
+            gfx.DrawRectangle(new PdfSharp.Drawing.XSolidBrush(PdfSharp.Drawing.XColor.FromArgb(255, 220, 30, 30)), 0, 0, 50, 100);   // red
+            gfx.DrawRectangle(new PdfSharp.Drawing.XSolidBrush(PdfSharp.Drawing.XColor.FromArgb(255, 30, 60, 220)), 50, 0, 50, 100);  // blue
+            gfx.DrawRectangle(new PdfSharp.Drawing.XSolidBrush(PdfSharp.Drawing.XColor.FromArgb(255, 0, 0, 0)), 100, 0, 50, 100);     // black
+        }
+        using var ms = new MemoryStream();
+        doc.Save(ms, false);
+        return ms.ToArray();
+    }
+
+    static (byte R, byte G, byte B) Pixel(System.Windows.Media.Imaging.BitmapSource bmp, int x, int y)
+    {
+        var px = new byte[4];
+        bmp.CopyPixels(new System.Windows.Int32Rect(x, y, 1, 1), px, 4, 0);
+        return (px[2], px[1], px[0]);
+    }
+
+    [Fact]
+    public void Night_mode_flips_lightness_but_keeps_the_hues()
+    {
+        using var pdf = PdfFile.Open(PageWithBlocks());
+        var night = pdf.Render(0, 200, 100, new System.Windows.Int32Rect(0, 0, 200, 100), 0, true)!;
+        var normal = pdf.Render(0, 200, 100, new System.Windows.Int32Rect(0, 0, 200, 100), 0, false)!;
+
+        var white = Pixel(night, 180, 50);
+        Assert.Equal((24, 24, 24), ((int)white.R, (int)white.G, (int)white.B)); // white paper -> soft dark gray
+        var black = Pixel(night, 125, 50);
+        Assert.True(black.R > 200 && black.G > 200 && black.B > 200, $"black -> {black}"); // black -> light gray
+
+        var red = Pixel(night, 25, 50);
+        Assert.True(red.R > red.G + 30 && red.R > red.B + 30, $"red stays reddish: {red}");
+        var blue = Pixel(night, 75, 50);
+        Assert.True(blue.B > blue.R + 20 && blue.B > blue.G + 10, $"blue stays bluish: {blue}");
+
+        // a plain inversion would have made the red block cyan
+        var original = Pixel(normal, 25, 50);
+        Assert.True(original.R > 200);
+    }
+}
+
+public class PdfInfoTests
+{
+    [Fact]
+    public void Pdf_dates_are_read_with_their_zone()
+    {
+        var utc = PdfInfo.ParseDate("D:20240131093000Z")!.Value.ToUniversalTime();
+        Assert.Equal(new DateTime(2024, 1, 31, 9, 30, 0), utc);
+        var plus = PdfInfo.ParseDate("D:20240131093000+02'00'")!.Value.ToUniversalTime();
+        Assert.Equal(new DateTime(2024, 1, 31, 7, 30, 0), plus);
+        Assert.Equal(new DateTime(2023, 5, 1), PdfInfo.ParseDate("D:20230501")!.Value.Date);
+        Assert.Null(PdfInfo.ParseDate(""));
+        Assert.Null(PdfInfo.ParseDate("nonsense"));
+    }
+
+    [Fact]
+    public void Page_sizes_get_their_paper_name()
+    {
+        Assert.StartsWith("A4", PdfInfo.DescribePageSize(595, 842));
+        Assert.StartsWith("A4", PdfInfo.DescribePageSize(842, 595));
+        Assert.StartsWith("Letter", PdfInfo.DescribePageSize(612, 792));
+        Assert.DoesNotContain("(", PdfInfo.DescribePageSize(300, 300));
+    }
+
+    [Fact]
+    public void Document_information_is_read()
+    {
+        var doc = new PdfSharp.Pdf.PdfDocument();
+        doc.Info.Title = "Titolo di prova è";
+        doc.Info.Author = "Phate";
+        doc.AddPage();
+        using var ms = new MemoryStream();
+        doc.Save(ms, false);
+        using var pdf = PdfFile.Open(ms.ToArray());
+        var info = pdf.ReadInfo();
+        Assert.Equal("Titolo di prova è", info.Title);
+        Assert.Equal("Phate", info.Author);
+        Assert.False(info.IsEncrypted);
+        Assert.False(info.HasForm);
+        Assert.NotEmpty(info.Version);
+        Assert.NotNull(info.Created);
     }
 }

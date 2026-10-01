@@ -127,3 +127,42 @@ public sealed partial class ImageAnnotation : Annotation
 
     public override bool SameAs(Annotation o) => o is ImageAnnotation i && SameGeometry(i) && ReferenceEquals(Data, i.Data);
 }
+
+public enum MarkupKind { Highlight, Underline, Strikeout }
+
+/// <summary>A highlight, underline or strike-through over text: the rectangles of its lines, in page space.</summary>
+public sealed partial class MarkupAnnotation : Annotation
+{
+    /// <summary>How opaque the band of a highlight is: the text under it must stay easy to read.</summary>
+    public const byte HighlightAlpha = 0x5A;
+
+    [ObservableProperty] public partial MarkupKind Kind { get; set; } = MarkupKind.Highlight;
+    [ObservableProperty] public partial Color Color { get; set; } = Color.FromRgb(0xFF, 0xEB, 0x3B);
+
+    /// <summary>One rectangle per line of the marked text (shared between snapshots: never edited in place).</summary>
+    public IReadOnlyList<Rect> Rects { get; private set; } = [];
+
+    public static MarkupAnnotation Create(int page, MarkupKind kind, Color color, IEnumerable<Rect> rects)
+    {
+        var list = rects.ToArray();
+        var m = new MarkupAnnotation { Page = page, Kind = kind, Color = color, Rects = list };
+        if (list.Length > 0)
+        {
+            var union = list.Aggregate(Rect.Union);
+            m.X = union.X; m.Y = union.Y; m.Width = union.Width; m.Height = union.Height;
+        }
+        return m;
+    }
+
+    protected override Annotation CreateEmpty() => new MarkupAnnotation();
+
+    public override void CopyFrom(Annotation o)
+    {
+        base.CopyFrom(o);
+        if (o is not MarkupAnnotation m) return;
+        Kind = m.Kind; Color = m.Color; Rects = m.Rects;
+    }
+
+    public override bool SameAs(Annotation o)
+        => o is MarkupAnnotation m && SameGeometry(m) && Kind == m.Kind && Color == m.Color && ReferenceEquals(Rects, m.Rects);
+}

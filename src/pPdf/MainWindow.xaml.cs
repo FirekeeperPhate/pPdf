@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         Viewer.ToolChanged += (_, _) => { UpdateAnnotationBar(); UpdateUi(); };
         Viewer.SelectedAnnotationChanged += (_, _) => { UpdateAnnotationBar(); UpdateUi(); };
         Viewer.SelectionChanged += (_, _) => UpdateUi();
+        Viewer.HistoryChanged += (_, _) => UpdateUi();
         Viewer.Annotations.HistoryChanged += UpdateUi;
 
         InitMemoryTrim();
@@ -82,6 +83,9 @@ public partial class MainWindow : Window
         if (_settings.ZoomMode == ZoomMode.Custom) Viewer.SetZoom(_settings.Zoom); else Viewer.SetZoomMode(_settings.ZoomMode);
         Viewer.InvertColors = _settings.InvertPages;
 
+        Viewer.MarkupColor = ParseColor(_settings.MarkupColor) ?? Viewer.MarkupColor;
+        MarkupColorButton.Value = Viewer.MarkupColor;
+
         var d = Viewer.TextDefaults;
         d.FontFamily = _settings.TextFont;
         d.FontSize = _settings.TextSize;
@@ -117,6 +121,7 @@ public partial class MainWindow : Window
         _settings.InvertPages = Viewer.InvertColors;
         _settings.MatchCase = MatchCaseToggle.IsChecked == true;
         _settings.WholeWord = WholeWordToggle.IsChecked == true;
+        _settings.MarkupColor = ColorText(Viewer.MarkupColor);
         var d = Viewer.TextDefaults;
         _settings.TextFont = d.FontFamily;
         _settings.TextSize = d.FontSize;
@@ -370,6 +375,8 @@ public partial class MainWindow : Window
         try
         {
             PrevButton.IsEnabled = NextButton.IsEnabled = hasDoc;
+            BackButton.IsEnabled = Viewer.CanGoBack;
+            ForwardButton.IsEnabled = Viewer.CanGoForward;
             PrintButton.IsEnabled = SaveButton.IsEnabled = hasDoc;
             FindToggle.IsEnabled = hasDoc;
             PageBox.IsEnabled = ZoomBox.IsEnabled = hasDoc;
@@ -409,13 +416,25 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------------ toolbar: navigation and zoom
 
+    void OnBack(object sender, RoutedEventArgs e) => Viewer.GoBack();
+    void OnForward(object sender, RoutedEventArgs e) => Viewer.GoForward();
+
+    // the extra mouse buttons (browser style) go back and forward too
+    protected override void OnPreviewMouseDown(MouseButtonEventArgs e)
+    {
+        base.OnPreviewMouseDown(e);
+        if (_pdf == null || e.Handled) return;
+        if (e.ChangedButton == MouseButton.XButton1) { Viewer.GoBack(); e.Handled = true; }
+        else if (e.ChangedButton == MouseButton.XButton2) { Viewer.GoForward(); e.Handled = true; }
+    }
+
     void OnPrevPage(object sender, RoutedEventArgs e) => Viewer.PreviousPage();
     void OnNextPage(object sender, RoutedEventArgs e) => Viewer.NextPage();
 
     void OnPageBoxKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
-        if (int.TryParse(PageBox.Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out int n)) Viewer.GoToPage(n - 1);
+        if (int.TryParse(PageBox.Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out int n)) Viewer.JumpToPage(n - 1);
         e.Handled = true;
         Viewer.Focus();
         UpdateUi();
@@ -519,7 +538,7 @@ public partial class MainWindow : Window
         Theme("Light", AppTheme.Light);
         Theme("Dark", AppTheme.Dark);
         menu.Items.Add(new Separator());
-        menu.Items.Add(CheckItem("Invert page colors (night reading)", Viewer.InvertColors, () => Viewer.InvertColors = !Viewer.InvertColors));
+        menu.Items.Add(CheckItem("Night mode for the pages (keeps colors)", Viewer.InvertColors, () => Viewer.InvertColors = !Viewer.InvertColors));
         menu.IsOpen = true;
     }
 
@@ -545,6 +564,14 @@ public partial class MainWindow : Window
         var save = new MenuItem { Header = "Save a copy with annotations...", IsEnabled = _pdf != null };
         save.Click += (_, _) => _ = SaveCopyAsync();
         menu.Items.Add(save);
+        var export = new MenuItem { Header = "Export this page as an image...", IsEnabled = _pdf != null };
+        export.Click += (_, _) => _ = ExportPageImageAsync();
+        menu.Items.Add(export);
+        menu.Items.Add(new Separator());
+        MenuItem Doc(string header, Action action) { var mi = new MenuItem { Header = header, IsEnabled = _pdf != null }; mi.Click += (_, _) => action(); return mi; }
+        menu.Items.Add(Doc("Document properties...", ShowProperties));
+        menu.Items.Add(Doc("Show in folder", ShowInFolder));
+        menu.Items.Add(Doc("Copy file path", CopyPath));
         menu.Items.Add(new Separator());
         var newWindow = new MenuItem { Header = "New window", InputGestureText = "Ctrl+N" };
         newWindow.Click += (_, _) => ((App)Application.Current).NewWindow();
@@ -572,6 +599,7 @@ public partial class MainWindow : Window
         MessageBox.Show(this,
             "Ctrl+O  Open\nCtrl+S  Save a copy with annotations\nCtrl+P  Print\nCtrl+F  Find   (Enter / F3 next, Shift+Enter / Shift+F3 previous)\n" +
             "Ctrl+C  Copy selected text\nCtrl+A  Select all text\nF4  Pages / outline panel\n\n" +
+            "Ctrl+G  Go to page   Alt+Left / Alt+Right (or the mouse back / forward buttons)  Back / forward\nF11  Full screen\n" +
             "Ctrl+Wheel, Ctrl++ / Ctrl+-  Zoom\nCtrl+0  Fit page   Ctrl+1  Actual size   Ctrl+2  Fit width\nCtrl+R / Ctrl+Shift+R  Rotate\n" +
             "PgUp / PgDn, Space, arrows, Home / End  Navigate\nMiddle mouse drag  Pan\n\n" +
             "T  Add text    I  Add image    Ctrl+V  Paste image or text as annotation\nDel  Delete annotation   Enter / F2  Edit text\n" +
@@ -669,12 +697,21 @@ public partial class MainWindow : Window
         bool ctrl = (mods & ModifierKeys.Control) != 0, shift = (mods & ModifierKeys.Shift) != 0, alt = (mods & ModifierKeys.Alt) != 0;
         bool typing = Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase or ComboBox or PasswordBox;
         Key key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (alt) return;
+        if (alt)
+        {
+            if (_pdf != null && !ctrl && !shift && !typing)
+            {
+                if (key == Key.Left) { Viewer.GoBack(); e.Handled = true; }
+                else if (key == Key.Right) { Viewer.GoForward(); e.Handled = true; }
+            }
+            return;
+        }
 
         if (ctrl)
         {
             switch (key)
             {
+                case Key.G when _pdf != null: PageBox.Focus(); PageBox.SelectAll(); e.Handled = true; return;
                 case Key.O: _ = BrowseAndOpenAsync(); e.Handled = true; return;
                 case Key.N: ((App)Application.Current).NewWindow(); e.Handled = true; return;
                 case Key.S when _pdf != null: _ = SaveCopyAsync(); e.Handled = true; return;
@@ -702,6 +739,9 @@ public partial class MainWindow : Window
         {
             case Key.F3 when _pdf != null: FindStep(!shift); e.Handled = true; return;
             case Key.F4: ToggleSidebar(); e.Handled = true; return;
+            case Key.F11: ToggleFullScreen(); e.Handled = true; return;
+            case Key.Escape when _fullScreen && !typing && Viewer.SelectedAnnotation == null && Viewer.Tool == ViewerTool.Select && !Viewer.HasSelection:
+                ToggleFullScreen(); e.Handled = true; return;
             case Key.Escape when FindBar.IsVisible && FindBar.IsKeyboardFocusWithin: HideFind(); e.Handled = true; return;
         }
         if (typing || _pdf == null || shift) return;

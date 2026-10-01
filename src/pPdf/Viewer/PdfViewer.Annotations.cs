@@ -63,7 +63,8 @@ public sealed partial class PdfViewer
         var ac = new AnnotationControl(a, Annotations) { ViewScale = slot.Scale, IsPending = pending, IsSelected = a == _selectedAnnotation };
         ac.SelectRequested += OnAnnotationSelectRequested;
         ac.EditEnded += OnAnnotationEditEnded;
-        slot.AnnotationLayer.Children.Add(ac);
+        // highlights and lines sit under text boxes and images
+        if (a is MarkupAnnotation) slot.AnnotationLayer.Children.Insert(0, ac); else slot.AnnotationLayer.Children.Add(ac);
         return ac;
     }
 
@@ -294,10 +295,10 @@ public sealed partial class PdfViewer
             case Key.F2:
                 if (a is TextAnnotation) { EditSelectedText(); return true; }
                 return false;
-            case Key.Left: Nudge(a, -step, 0); return true;
-            case Key.Right: Nudge(a, step, 0); return true;
-            case Key.Up: Nudge(a, 0, -step); return true;
-            case Key.Down: Nudge(a, 0, step); return true;
+            case Key.Left when a is not MarkupAnnotation: Nudge(a, -step, 0); return true;
+            case Key.Right when a is not MarkupAnnotation: Nudge(a, step, 0); return true;
+            case Key.Up when a is not MarkupAnnotation: Nudge(a, 0, -step); return true;
+            case Key.Down when a is not MarkupAnnotation: Nudge(a, 0, step); return true;
         }
         return false;
     }

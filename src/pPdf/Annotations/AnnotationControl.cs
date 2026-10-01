@@ -47,13 +47,18 @@ public sealed class AnnotationControl : Grid
     public double ViewScale
     {
         get => _scale;
-        set { _scale = value <= 0 ? 1 : value; _chrome.Scale = _scale; }
+        set { _scale = value <= 0 ? 1 : value; _chrome.Scale = _scale; if (_content is MarkupVisual mv) mv.Scale = _scale; }
     }
 
     public bool IsSelected
     {
         get => _selected;
-        set { _selected = value; _chrome.IsSelected = value; }
+        set
+        {
+            _selected = value;
+            // a markup shows its own dashed outline instead of a box with handles
+            if (_content is MarkupVisual mv) mv.IsSelected = value; else _chrome.IsSelected = value;
+        }
     }
 
     public bool IsEditing => _editor != null;
@@ -72,9 +77,12 @@ public sealed class AnnotationControl : Grid
         {
             TextAnnotation => new TextBlock { TextWrapping = TextWrapping.NoWrap, Padding = new Thickness(TextAnnotation.Padding) },
             ImageAnnotation => new Image { Stretch = Stretch.Fill },
+            MarkupAnnotation m => new MarkupVisual(m),
             _ => throw new NotSupportedException(),
         };
         if (_content is Image) RenderOptions.SetBitmapScalingMode(_content, BitmapScalingMode.HighQuality);
+        // a markup is only a picture over the text: the viewer handles the clicks on it
+        if (model is MarkupAnnotation) { IsHitTestVisible = false; Background = null; }
         Children.Add(_content);
         _chrome = new SelectionChrome(this);
         Children.Add(_chrome);
@@ -116,6 +124,11 @@ public sealed class AnnotationControl : Grid
                 ((Image)_content).Source = i.Source;
                 Width = Math.Max(1, i.Width);
                 Height = Math.Max(1, i.Height);
+                break;
+            case MarkupAnnotation mk:
+                Width = Math.Max(1, mk.Width);
+                Height = Math.Max(1, mk.Height);
+                ((MarkupVisual)_content).InvalidateVisual();
                 break;
         }
         _chrome.InvalidateVisual();

@@ -57,20 +57,7 @@ public sealed class PdfPaginator : DocumentPaginator
         using (var dc = visual.RenderOpen())
         {
             dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, area.Width, area.Height));
-            var bmp = _pdf.Render(page, pxW, pxH, new Int32Rect(0, 0, pxW, pxH), rotation, invert: false, printing: true);
-            if (bmp != null) dc.DrawImage(bmp, new Rect(x, y, dipW, dipH));
-
-            var mine = _annotations.Where(a => a.Page == page).ToList();
-            if (mine.Count > 0)
-            {
-                var m = Viewer.PageSlot.OverlayMatrix(size, fit, rotation);
-                m.Translate(x, y);
-                dc.PushClip(new RectangleGeometry(new Rect(x, y, dipW, dipH)));
-                dc.PushTransform(new MatrixTransform(m));
-                foreach (var a in mine) AnnotationDrawing.Draw(dc, a);
-                dc.Pop();
-                dc.Pop();
-            }
+            PageComposer.Draw(dc, _pdf, page, new Rect(x, y, dipW, dipH), rotation, pxW, pxH, _annotations);
         }
         return new DocumentPage(visual, area, new Rect(area), new Rect(area));
     }

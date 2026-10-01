@@ -135,3 +135,43 @@ public class AnnotationWriterTests
         Assert.InRange(box.B, 228, 230);
     }
 }
+
+public class MarkupWriterTests
+{
+    [Fact]
+    public void Highlight_is_translucent_so_the_text_stays_readable_and_underline_and_strike_are_drawn()
+    {
+        var bytes = TestPdf.Create([["Highlight me please"]]);
+        using var src = PdfFile.Open(bytes);
+        var text = src.LoadText(0, true)!;
+        int s = text.Text.IndexOf("me", StringComparison.Ordinal);
+        var rect = text.RectsForRange(s, s + 2)[0];
+        var rects = new[] { rect.ToRect() };
+
+        var hi = MarkupAnnotation.Create(0, MarkupKind.Highlight, Colors.Yellow, rects);
+        var ul = MarkupAnnotation.Create(0, MarkupKind.Underline, Colors.Red, [new Rect(60, 200, 80, 14)]);
+        var st = MarkupAnnotation.Create(0, MarkupKind.Strikeout, Colors.Blue, [new Rect(60, 300, 80, 14)]);
+        var saved = PdfAnnotationWriter.Apply(bytes, null, [hi, ul, st]);
+        using var pdf = PdfFile.Open(saved);
+        var bmp = pdf.Render(0, 595, 842, new Int32Rect(0, 0, 595, 842), 0, false)!;
+
+        byte[] Px(int x, int y) { var p = new byte[4]; bmp.CopyPixels(new Int32Rect(x, y, 1, 1), p, 4, 0); return p; }
+        // somewhere in the band the paper is tinted light yellow (red and green high, blue clearly below white)
+        bool yellow = false;
+        for (int y = (int)rect.Y; y < (int)rect.Bottom && !yellow; y++)
+            for (int x = (int)rect.X; x < (int)rect.Right && !yellow; x++) { var p = Px(x, y); yellow = p[2] > 230 && p[1] > 230 && p[0] is > 100 and < 200; }
+        Assert.True(yellow, "the highlighted band is tinted yellow");
+        // the text is still dark somewhere in the band
+        bool dark = false;
+        for (int y = (int)rect.Y; y < (int)rect.Bottom && !dark; y++)
+            for (int x = (int)rect.X; x < (int)rect.Right && !dark; x++) { var p = Px(x, y); dark = p[0] < 120 && p[1] < 120 && p[2] < 120; }
+        Assert.True(dark, "text under the highlight is still readable");
+
+        var under = Px(100, 213);   // red line near the bottom of the underline rect (212.5 .. 213.5)
+        Assert.True(under[2] > 200 && under[1] < 80, $"underline pixel {under[2]},{under[1]},{under[0]}");
+        // a blue line through the middle of the rect (a 1 pt line may be spread over two pixel rows)
+        bool blue = false;
+        for (int y = 303; y <= 311 && !blue; y++) { var p = Px(100, y); blue = p[0] > 200 && p[2] < 120; }
+        Assert.True(blue, "strike-through line is drawn");
+    }
+}

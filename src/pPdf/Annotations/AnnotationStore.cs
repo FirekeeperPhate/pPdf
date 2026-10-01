@@ -48,6 +48,14 @@ public sealed class AnnotationStore
         Push(new UndoEntry("Add", () => RemoveCore(a), () => AddCore(a)));
     }
 
+    /// <summary>Adds several annotations as one step (one undo takes them all away).</summary>
+    public void AddGroup(IReadOnlyList<Annotation> group)
+    {
+        if (group.Count == 0) return;
+        foreach (var a in group) AddCore(a);
+        Push(new UndoEntry("Add", () => { foreach (var a in group) RemoveCore(a); }, () => { foreach (var a in group) AddCore(a); }));
+    }
+
     public void Remove(Annotation a)
     {
         if (!_items.Contains(a)) return;

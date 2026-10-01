@@ -279,7 +279,7 @@ public sealed partial class PdfViewer
     {
         if (_result == null) return;
         var view = new Rect(_scroll.HorizontalOffset, _scroll.VerticalOffset, _scroll.ViewportWidth, _scroll.ViewportHeight);
-        if (Rect.Intersect(view, _result.PageRects[page]).IsEmpty) GoToPage(page);
+        if (Rect.Intersect(view, _result.PageRects[page]).IsEmpty) JumpToPage(page);
     }
 
     // ------------------------------------------------------------------ hit testing
@@ -352,7 +352,9 @@ public sealed partial class PdfViewer
         _downPoint = pt;
         _pendingLink = null;
         // Select tool: the pointer over text selects, over empty space it drags the page
+        _pendingMarkup = null;
         if (!TryHit(pt, out var slot, out var pp)) { StartPan(e, fromSelect: true); return; }
+        _pendingMarkup = FindMarkupAt(slot.PageIndex, pp); // a plain click on marked text selects the markup (a drag still selects the text)
 
         if (LinkAt(slot, pp) is { } link) { _pendingLink = link; e.Handled = true; _canvas.CaptureMouse(); return; }
 
@@ -442,7 +444,7 @@ public sealed partial class PdfViewer
             // a click on empty space (no drag) clears the selection, as it always did
             bool click = _panFromSelect && (e.GetPosition(_scroll) - _panStart).Length < 4;
             EndPan();
-            if (click) ClearSelection();
+            if (click) { ClearSelection(); if (_pendingMarkup != null) SelectedAnnotation = _pendingMarkup; }
             return;
         }
         if (_pendingLink is { } link)
@@ -457,8 +459,12 @@ public sealed partial class PdfViewer
             _selecting = false;
             _autoScroll.Stop();
             _canvas.ReleaseMouseCapture();
-            // a plain click leaves no selection behind
-            if (!HasSelection) ClearSelection();
+            // a plain click leaves no selection behind (and on marked text it selects the markup)
+            if (!HasSelection)
+            {
+                ClearSelection();
+                if (_pendingMarkup != null) SelectedAnnotation = _pendingMarkup;
+            }
         }
     }
 
@@ -518,7 +524,7 @@ public sealed partial class PdfViewer
 
     void FollowLink(PageLink link)
     {
-        if (link.PageIndex >= 0) { GoToPage(link.PageIndex); return; }
+        if (link.PageIndex >= 0) { JumpToPage(link.PageIndex); return; }
         if (link.Uri is not { } uri) return;
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var u)) return;
         // only ever hand the shell something that cannot run code
@@ -575,9 +581,9 @@ public sealed partial class PdfViewer
             case Key.Space when shift:
                 ScrollScreen(-1); break;
             case Key.Home:
-                GoToPage(0); break;
+                JumpToPage(0); break;
             case Key.End:
-                GoToPage(PageCount - 1); break;
+                JumpToPage(PageCount - 1); break;
             default:
                 return;
         }

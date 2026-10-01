@@ -30,6 +30,7 @@ public static class PdfAnnotationWriter
                 {
                     case TextAnnotation t: DrawText(gfx, t); break;
                     case ImageAnnotation i: DrawImage(gfx, i); break;
+                    case MarkupAnnotation m: DrawMarkup(gfx, m); break;
                 }
             }
         }
@@ -101,6 +102,23 @@ public static class PdfAnnotationWriter
                 }
             }
             y += lineHeight;
+        }
+    }
+
+    static void DrawMarkup(XGraphics gfx, MarkupAnnotation m)
+    {
+        var c = m.Color;
+        var band = new XSolidBrush(XColor.FromArgb(MarkupAnnotation.HighlightAlpha, c.R, c.G, c.B));
+        var solid = new XSolidBrush(XColor.FromArgb(255, c.R, c.G, c.B));
+        foreach (var r in m.Rects)
+        {
+            double t = Math.Max(0.8, r.Height * 0.07);
+            switch (m.Kind)
+            {
+                case MarkupKind.Highlight: gfx.DrawRectangle(band, r.X, r.Y, r.Width, r.Height); break;
+                case MarkupKind.Underline: gfx.DrawRectangle(solid, r.X, r.Bottom - t * 1.5, r.Width, t); break;
+                case MarkupKind.Strikeout: gfx.DrawRectangle(solid, r.X, r.Y + (r.Height - t) / 2, r.Width, t); break;
+            }
         }
     }
 

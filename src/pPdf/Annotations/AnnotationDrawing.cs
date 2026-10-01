@@ -15,6 +15,24 @@ public static class AnnotationDrawing
             case ImageAnnotation i:
                 dc.DrawImage(i.Source, new Rect(i.X, i.Y, i.Width, i.Height));
                 break;
+            case MarkupAnnotation m: DrawMarkup(dc, m); break;
+        }
+    }
+
+    /// <summary>Same look as <see cref="MarkupVisual"/>: a translucent band, or a line under / through the text.</summary>
+    static void DrawMarkup(DrawingContext dc, MarkupAnnotation m)
+    {
+        var solid = new SolidColorBrush(m.Color);
+        var band = new SolidColorBrush(Color.FromArgb(MarkupAnnotation.HighlightAlpha, m.Color.R, m.Color.G, m.Color.B));
+        foreach (var r in m.Rects)
+        {
+            double t = Math.Max(0.8, r.Height * 0.07);
+            switch (m.Kind)
+            {
+                case MarkupKind.Highlight: dc.DrawRectangle(band, null, r); break;
+                case MarkupKind.Underline: dc.DrawRectangle(solid, null, new Rect(r.X, r.Bottom - t * 1.5, r.Width, t)); break;
+                case MarkupKind.Strikeout: dc.DrawRectangle(solid, null, new Rect(r.X, r.Y + (r.Height - t) / 2, r.Width, t)); break;
+            }
         }
     }
 

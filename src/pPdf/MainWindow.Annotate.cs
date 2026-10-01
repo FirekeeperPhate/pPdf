@@ -48,6 +48,13 @@ public partial class MainWindow
         bool isText = sel is TextAnnotation || (sel == null && textTool);
         TextFormatPanel.Visibility = isText ? Visibility.Visible : Visibility.Collapsed;
         ImageHint.Visibility = sel is ImageAnnotation ? Visibility.Visible : Visibility.Collapsed;
+        MarkupHint.Visibility = sel is MarkupAnnotation ? Visibility.Visible : Visibility.Collapsed;
+        if (sel is MarkupAnnotation mk)
+        {
+            _syncing = true;
+            try { MarkupColorButton.Value = mk.Color; }
+            finally { _syncing = false; }
+        }
         if (!isText) return;
 
         var t = StyleSource;
