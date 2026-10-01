@@ -10,6 +10,7 @@
 - **Document properties**, **Show in folder**, **Copy file path** and **Export this page as an image** (PNG or JPEG, 150 / 300 / 600 dpi, with annotations and form values) in the More menu.
 - Smoother wheel scrolling (a short glide).
 - The toolbar wraps onto a second row when the window is narrow instead of hiding buttons.
+- Shift + wheel scrolls sideways when the page is wider than the window. Arrow keys, Page Up / Down and the wheel over an open list now work inside form fields instead of also moving the page. Saving a copy over the open file reloads it without drawing the annotations twice.
 
 
 ## 0.1.5

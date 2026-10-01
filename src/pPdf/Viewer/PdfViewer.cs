@@ -485,14 +485,46 @@ public sealed partial class PdfViewer : Grid
         }
     }
 
+    /// <summary>True when the wheel is over something with a scrolling of its own: an open drop-down list or a long list box of a form.</summary>
+    static bool WheelBelongsToControl(object? source)
+    {
+        var d = source as DependencyObject;
+        while (d != null)
+        {
+            if (d is ComboBox { IsDropDownOpen: true }) return true;
+            if (d is ListBox lb && FindScroller(lb) is { ScrollableHeight: > 0 }) return true;
+            d = d is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) ?? LogicalTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
+        }
+        return false;
+    }
+
+    static ScrollViewer? FindScroller(DependencyObject root)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer sv) return sv;
+            if (FindScroller(child) is { } found) return found;
+        }
+        return null;
+    }
+
     void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (_pdf == null) return;
+        if (WheelBelongsToControl(e.OriginalSource)) return;
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             e.Handled = true;
             var anchor = e.GetPosition(_scroll);
             if (e.Delta > 0) ZoomIn(anchor); else ZoomOut(anchor);
+            return;
+        }
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 && _scroll.ScrollableWidth > 1)
+        {
+            // Shift + wheel moves sideways when the page is wider than the window
+            e.Handled = true;
+            _scroll.ScrollToHorizontalOffset(_scroll.HorizontalOffset - e.Delta / 120.0 * 96);
             return;
         }
         if (!IsPaged)

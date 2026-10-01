@@ -39,8 +39,7 @@ public partial class MainWindow
             WindowState = _beforeFullScreen;
             MainToolbar.Visibility = Visibility.Visible;
             StatusBar.Visibility = Visibility.Visible;
-            SidebarColumn.Width = new GridLength(_beforeSidebar ? _settings.SidebarWidth : 0);
-            SidebarSplitter.Visibility = _beforeSidebar ? Visibility.Visible : Visibility.Collapsed;
+            SetSidebar(_beforeSidebar); // also when F4 opened or closed the panel in the meantime
             UpdateAnnotationBar();
         }
         Viewer.Focus();

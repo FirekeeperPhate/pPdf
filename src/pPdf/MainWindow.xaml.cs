@@ -22,7 +22,7 @@ public partial class MainWindow : Window
     PdfFile? _pdf;
     string? _path;
     bool _syncing;
-    bool _forceClose;
+
     bool _busy;
 
     /// <summary>No document and nothing being opened: a new file can use this window.</summary>
@@ -636,6 +636,7 @@ public partial class MainWindow : Window
         var pdf = _pdf;
         var anns = Viewer.Annotations.Items.ToList();
         var formValues = Viewer.Form?.ChangedValues() ?? [];
+        bool overwroteOpenFile = false;
         SetBusy(true, "Saving...");
         try
         {
@@ -643,7 +644,7 @@ public partial class MainWindow : Window
             await File.WriteAllBytesAsync(dlg.FileName, bytes);
             Viewer.Annotations.MarkSaved();
             UpdateUi();
-            return true;
+            overwroteOpenFile = string.Equals(Path.GetFullPath(dlg.FileName), Path.GetFullPath(_path!), StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
         {
@@ -655,6 +656,17 @@ public partial class MainWindow : Window
             return false;
         }
         finally { SetBusy(false); }
+
+        if (overwroteOpenFile && _path is { } saved)
+        {
+            // the annotations are now part of the file itself: the kept ones would be drawn a second time. Open the new file instead.
+            _keepTimer.Stop();
+            _keepChanged = false;
+            AnnotationPersistence.Default.Delete(saved);
+            Viewer.Annotations.Clear();
+            await OpenAsync(saved);
+        }
+        return true;
     }
 
     async void OnPrintClick(object sender, RoutedEventArgs e) => await PrintAsync();

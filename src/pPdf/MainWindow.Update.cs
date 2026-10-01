@@ -164,8 +164,7 @@ public partial class MainWindow
                 if (!ready.WaitOne(0)) return false;
             }
         }
-        // the annotations were already confirmed or discarded in every window: close them all, which ends the process
-        foreach (var w in Application.Current.Windows.OfType<MainWindow>()) w._forceClose = true;
+        // the annotations were already written in every window: shutting down closes them all
         Application.Current.Shutdown();
         return true;
     }

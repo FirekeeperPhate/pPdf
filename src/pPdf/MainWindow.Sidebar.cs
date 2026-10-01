@@ -60,7 +60,7 @@ public partial class MainWindow
     void OnThumbLoaded(object sender, RoutedEventArgs e)
     {
         if (ThumbsActive && sender is FrameworkElement { DataContext: ThumbItem item })
-            item.RequestLoad(Viewer.Renderer, _pdf, VisualTreeHelper_Dpi());
+            item.RequestLoad(Viewer.Renderer, _pdf!, VisualTreeHelper_Dpi());
     }
 
     double VisualTreeHelper_Dpi() => System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX;

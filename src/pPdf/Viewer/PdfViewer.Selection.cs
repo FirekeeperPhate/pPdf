@@ -67,7 +67,7 @@ public sealed partial class PdfViewer
         _canvas.MouseLeftButtonUp += OnCanvasLeftUp;
         _canvas.MouseDown += OnCanvasOtherDown;
         _canvas.MouseUp += OnCanvasOtherUp;
-        _canvas.LostMouseCapture += (_, _) => { _selecting = false; _panning = false; _autoScroll?.Stop(); };
+        _canvas.LostMouseCapture += (_, _) => { _selecting = false; _panning = false; _panFromSelect = false; _pendingLink = null; _autoScroll?.Stop(); };
         _autoScroll = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(35) };
         _autoScroll.Tick += OnAutoScroll;
     }
@@ -402,6 +402,7 @@ public sealed partial class PdfViewer
         }
         if (_pendingLink != null)
         {
+            if (e.LeftButton != MouseButtonState.Pressed) { _pendingLink = null; return; } // the button was released elsewhere
             // a drag that started on a link turns into a plain text selection
             if ((e.GetPosition(_canvas) - _downPoint).Length > 4) { _pendingLink = null; StartSelectionAt(_downPoint); }
             return;
@@ -540,6 +541,9 @@ public sealed partial class PdfViewer
     {
         base.OnKeyDown(e);
         if (_pdf == null || e.Handled) return;
+        // keys pressed in a form field or a text box being edited bubble up to here: they are not for the document
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase or System.Windows.Controls.ComboBox
+                                    or System.Windows.Controls.ListBox or System.Windows.Controls.ListBoxItem) return;
         bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
