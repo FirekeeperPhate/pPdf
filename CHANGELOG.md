@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The pointer now switches by itself: over text it is the I-beam and dragging selects; over empty page or the grey background it is an open hand and dragging scrolls the page (a plain click there still clears the selection). The Hand tool remains for dragging even over text.
+
 ## 0.1.3
 
 - The scroll bar now spans the whole document in the single-page and two-page views too (it only covered the current page). The wheel, the arrows and PgUp / PgDn stay inside a page and then turn it; dragging the scroll bar settles on one page.

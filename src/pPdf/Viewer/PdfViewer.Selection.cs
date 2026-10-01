@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using pPdf.Pdf;
+using pPdf.Services;
 
 namespace pPdf.Viewer;
 
@@ -27,6 +28,9 @@ public sealed partial class PdfViewer
     TextPos? _selAnchor, _selFocus;
     bool _selecting;
     bool _panning;
+    bool _panFromSelect;
+    /// <summary>Points around a character that still count as "on the text" (so the gaps between letters and lines do not turn into a pan).</summary>
+    const double TextTolerance = 2.5;
     Point _panStart;
     Vector _panOffset;
     PageLink? _pendingLink;
@@ -347,14 +351,16 @@ public sealed partial class PdfViewer
 
         _downPoint = pt;
         _pendingLink = null;
-        if (!TryHit(pt, out var slot, out var pp)) { ClearSelection(); return; }
+        // Select tool: the pointer over text selects, over empty space it drags the page
+        if (!TryHit(pt, out var slot, out var pp)) { StartPan(e, fromSelect: true); return; }
 
         if (LinkAt(slot, pp) is { } link) { _pendingLink = link; e.Handled = true; _canvas.CaptureMouse(); return; }
 
         var data = DataFor(slot.PageIndex);
-        if (data == null) { EnsureText(slot.PageIndex); ClearSelection(); return; }
+        if (data == null) { EnsureText(slot.PageIndex); StartPan(e, fromSelect: true); return; }
+        if (!data.Text.IsNearText(pp.X, pp.Y, TextTolerance)) { StartPan(e, fromSelect: true); return; }
         int caret = data.Text.CaretAt(pp.X, pp.Y);
-        if (caret < 0) { ClearSelection(); return; }
+        if (caret < 0) { StartPan(e, fromSelect: true); return; }
 
         if (e.ClickCount >= 3)
         {
@@ -431,7 +437,14 @@ public sealed partial class PdfViewer
 
     void OnCanvasLeftUp(object sender, MouseButtonEventArgs e)
     {
-        if (_panning) { EndPan(); return; }
+        if (_panning)
+        {
+            // a click on empty space (no drag) clears the selection, as it always did
+            bool click = _panFromSelect && (e.GetPosition(_scroll) - _panStart).Length < 4;
+            EndPan();
+            if (click) ClearSelection();
+            return;
+        }
         if (_pendingLink is { } link)
         {
             _pendingLink = null;
@@ -459,22 +472,23 @@ public sealed partial class PdfViewer
         if (e.ChangedButton == MouseButton.Middle && _panning) EndPan();
     }
 
-    void StartPan(MouseButtonEventArgs e)
+    void StartPan(MouseButtonEventArgs e, bool fromSelect = false)
     {
         _panning = true;
+        _panFromSelect = fromSelect;
         _panStart = e.GetPosition(_scroll);
         _panOffset = new Vector(_scroll.HorizontalOffset, _scroll.VerticalOffset);
         _canvas.CaptureMouse();
-        Cursor = Cursors.ScrollAll;
-        _canvas.Cursor = Cursors.ScrollAll;
+        _canvas.Cursor = HandCursors.Closed;
         e.Handled = true;
     }
 
     void EndPan()
     {
         _panning = false;
+        _panFromSelect = false;
         _canvas.ReleaseMouseCapture();
-        UpdateCursor(null);
+        UpdateCursor(Mouse.GetPosition(_canvas));
     }
 
     void OnAutoScroll(object? sender, EventArgs e)
@@ -491,14 +505,15 @@ public sealed partial class PdfViewer
 
     void UpdateCursor(Point? canvasPt)
     {
-        if (_tool == ViewerTool.Hand) { _canvas.Cursor = Cursors.Hand; return; }
+        if (_tool == ViewerTool.Hand) { _canvas.Cursor = HandCursors.Open; return; }
         if (_tool == ViewerTool.Text) { _canvas.Cursor = Cursors.IBeam; return; }
+        // Select tool: text under the pointer = select (I-beam), a link = the pointing hand, anything else = drag the page (open hand)
         if (canvasPt is { } p && TryHit(p, out var slot, out var pp))
         {
             if (LinkAt(slot, pp) != null) { _canvas.Cursor = Cursors.Hand; return; }
-            if (DataFor(slot.PageIndex)?.Text.IsOverText(pp.X, pp.Y) == true) { _canvas.Cursor = Cursors.IBeam; return; }
+            if (DataFor(slot.PageIndex)?.Text.IsNearText(pp.X, pp.Y, TextTolerance) == true) { _canvas.Cursor = Cursors.IBeam; return; }
         }
-        _canvas.Cursor = Cursors.Arrow;
+        _canvas.Cursor = HandCursors.Open;
     }
 
     void FollowLink(PageLink link)

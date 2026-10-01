@@ -61,3 +61,31 @@ public class PageTextTests
         Assert.True(rects[0].Right < 300);
     }
 }
+
+public class TextProximityTests
+{
+    [Fact]
+    public void Near_text_covers_the_gaps_between_letters_and_lines_but_not_empty_page()
+    {
+        using var pdf = PdfFile.Open(TestPdf.Create([["first line", "second line"]]));
+        var t = pdf.LoadText(0, true)!;
+        int s = t.Text.IndexOf("second", StringComparison.Ordinal);
+        var b = t.Boxes![s];
+        Assert.True(t.IsNearText(b.CenterX, b.CenterY, 2.5));
+        Assert.True(t.IsNearText(b.X - 2, b.CenterY, 2.5));          // just left of the first letter
+        Assert.True(t.IsNearText(b.CenterX, b.Bottom + 2, 2.5));     // just under the line
+        Assert.False(t.IsNearText(b.X - 30, b.CenterY, 2.5));        // the margin
+        Assert.False(t.IsNearText(400, 700, 2.5));                   // empty page
+        Assert.False(t.IsOverText(b.X - 2, b.CenterY));
+    }
+
+    [Fact]
+    public void Hand_cursors_are_built_and_drawn()
+    {
+        Assert.NotNull(pPdf.Services.HandCursors.Open);
+        Assert.NotNull(pPdf.Services.HandCursors.Closed);
+        Assert.NotSame(System.Windows.Input.Cursors.Hand, pPdf.Services.HandCursors.Open); // not the fallback
+        var png = pPdf.Services.HandCursors.DrawPng(false);
+        Assert.True(png.Length > 200);
+    }
+}

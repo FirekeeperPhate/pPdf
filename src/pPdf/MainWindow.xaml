@@ -55,8 +55,8 @@
                     </Button>
                     <Border Style="{StaticResource ToolSeparator}" />
 
-                    <ToggleButton x:Name="SelectToolButton" Style="{StaticResource ToolToggle}" Content="&#xE933;" ToolTip="Select text" Click="OnSelectTool" />
-                    <ToggleButton x:Name="HandToolButton" Style="{StaticResource ToolToggle}" Content="&#xE7C9;" ToolTip="Hand tool: drag to scroll" Click="OnHandTool" />
+                    <ToggleButton x:Name="SelectToolButton" Style="{StaticResource ToolToggle}" Content="&#xE933;" ToolTip="Select text; drag the empty page to scroll it" Click="OnSelectTool" />
+                    <ToggleButton x:Name="HandToolButton" Style="{StaticResource ToolToggle}" Content="&#xE7C9;" ToolTip="Hand tool: always drag to scroll, even over text" Click="OnHandTool" />
                     <Border Style="{StaticResource ToolSeparator}" />
 
                     <ToggleButton x:Name="TextToolButton" Style="{StaticResource ToolToggle}" Content="&#xE8D2;" ToolTip="Add text (T): click on the page" Click="OnTextTool" />

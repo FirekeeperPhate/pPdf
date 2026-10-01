@@ -80,6 +80,20 @@ public sealed class PageText(int page, string text, RectF[]? boxes)
         return false;
     }
 
+    /// <summary>Like <see cref="IsOverText"/>, but also true within <paramref name="tolerance"/> points of a character.</summary>
+    public bool IsNearText(double x, double y, double tolerance)
+    {
+        var b = Boxes;
+        if (b == null) return false;
+        for (int i = 0; i < b.Length; i++)
+        {
+            ref readonly var r = ref b[i];
+            if (r.IsEmpty) continue;
+            if (x >= r.X - tolerance && x <= r.Right + tolerance && y >= r.Y - tolerance && y <= r.Bottom + tolerance) return true;
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------------ ranges
 
     static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '\'' || c == '’';
