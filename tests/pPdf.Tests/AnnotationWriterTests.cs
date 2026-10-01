@@ -1,0 +1,137 @@
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
+using pPdf.Annotations;
+using pPdf.Pdf;
+
+namespace pPdf.Tests;
+
+public class AnnotationWriterTests
+{
+    static byte[] SolidPng(Color c, int w = 8, int h = 4)
+    {
+        var px = new byte[w * h * 4];
+        for (int i = 0; i < w * h; i++)
+        {
+            // premultiplied BGRA
+            px[i * 4] = (byte)(c.B * c.A / 255); px[i * 4 + 1] = (byte)(c.G * c.A / 255); px[i * 4 + 2] = (byte)(c.R * c.A / 255); px[i * 4 + 3] = c.A;
+        }
+        var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Pbgra32, null, px, w * 4);
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(bmp));
+        using var ms = new MemoryStream();
+        enc.Save(ms);
+        return ms.ToArray();
+    }
+
+    static byte[] BlankPdf(int rotate, bool crop)
+    {
+        var doc = new PdfDocument();
+        var page = doc.AddPage();
+        page.Width = XUnit.FromPoint(595);
+        page.Height = XUnit.FromPoint(842);
+        if (rotate != 0) page.Rotate = rotate;
+        if (crop) page.CropBox = new PdfRectangle(new XPoint(30, 50), new XPoint(430, 650));
+        using (var gfx = XGraphics.FromPdfPage(page)) gfx.DrawString(" ", new XFont("Arial", 10), XBrushes.Black, new XPoint(10, 10));
+        using var ms = new MemoryStream();
+        doc.Save(ms, false);
+        return ms.ToArray();
+    }
+
+    /// <summary>Bounding box of the pixels that are clearly red, in device pixels at 1 px per point.</summary>
+    static (int L, int T, int R, int B)? RedBox(PdfFile pdf)
+    {
+        int w = (int)Math.Round(pdf.Pages[0].Width), h = (int)Math.Round(pdf.Pages[0].Height);
+        var bmp = pdf.Render(0, w, h, new Int32Rect(0, 0, w, h), 0, false)!;
+        var px = new byte[w * h * 4];
+        bmp.CopyPixels(px, w * 4, 0);
+        int l = int.MaxValue, t = int.MaxValue, r = -1, b = -1;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int o = (y * w + x) * 4;
+                if (px[o + 2] > 200 && px[o + 1] < 60 && px[o] < 60)
+                {
+                    l = Math.Min(l, x); t = Math.Min(t, y); r = Math.Max(r, x); b = Math.Max(b, y);
+                }
+            }
+        return r < 0 ? null : (l, t, r, b);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(90, false)]
+    [InlineData(180, false)]
+    [InlineData(270, false)]
+    [InlineData(0, true)]
+    [InlineData(90, true)]
+    [InlineData(180, true)]
+    [InlineData(270, true)]
+    public void Image_lands_where_the_user_placed_it_for_every_rotation_and_crop(int rotate, bool crop)
+    {
+        var img = ImageAnnotation.FromBytes(SolidPng(Colors.Red));
+        img.Page = 0; img.X = 100; img.Y = 200; img.Width = 40; img.Height = 20;
+
+        var saved = PdfAnnotationWriter.Apply(BlankPdf(rotate, crop), null, [img]);
+        using var pdf = PdfFile.Open(saved);
+        var box = RedBox(pdf);
+        Assert.NotNull(box);
+        // pdfium draws in the displayed orientation: the box must be exactly the rectangle that was placed
+        Assert.InRange(box!.Value.L, 99, 101);
+        Assert.InRange(box.Value.T, 199, 201);
+        Assert.InRange(box.Value.R, 138, 140);
+        Assert.InRange(box.Value.B, 218, 220);
+    }
+
+    [Fact]
+    public void Transparent_png_lets_the_page_show_through()
+    {
+        var img = ImageAnnotation.FromBytes(SolidPng(Color.FromArgb(128, 255, 0, 0)));
+        img.Page = 0; img.X = 100; img.Y = 200; img.Width = 40; img.Height = 20;
+        var saved = PdfAnnotationWriter.Apply(BlankPdf(0, false), null, [img]);
+        using var pdf = PdfFile.Open(saved);
+        var bmp = pdf.Render(0, 595, 842, new Int32Rect(0, 0, 595, 842), 0, false)!;
+        var px = new byte[4];
+        bmp.CopyPixels(new Int32Rect(120, 210, 1, 1), px, 4, 0);
+        // half red over white = light red: green and blue stay high
+        Assert.True(px[2] > 240, $"R {px[2]}");
+        Assert.InRange(px[1], 100, 160);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(90)]
+    [InlineData(180)]
+    [InlineData(270)]
+    public void Text_is_written_as_real_text_at_the_right_place(int rotate)
+    {
+        var t = new TextAnnotation { Page = 0, X = 100, Y = 200, Text = "Ciao perché mondo", FontSize = 18 };
+        var saved = PdfAnnotationWriter.Apply(BlankPdf(rotate, false), null, [t]);
+        using var pdf = PdfFile.Open(saved);
+        var text = pdf.LoadText(0, true)!;
+        int i = text.Text.IndexOf("Ciao", StringComparison.Ordinal);
+        Assert.True(i >= 0, text.Text);
+        Assert.Contains("perché", text.Text);
+        var first = text.RectsForRange(i, i + 4);
+        Assert.NotEmpty(first);
+        // the first letter sits at the annotation's top-left corner (plus padding)
+        Assert.InRange(first[0].X, 99, 110);
+        Assert.InRange(first[0].Y, 198, 215);
+    }
+
+    [Fact]
+    public void Text_background_is_filled()
+    {
+        var t = new TextAnnotation { Page = 0, X = 100, Y = 200, Width = 80, Height = 30, Text = "x", Background = Colors.Red };
+        var saved = PdfAnnotationWriter.Apply(BlankPdf(0, false), null, [t]);
+        using var pdf = PdfFile.Open(saved);
+        var box = RedBox(pdf)!.Value;
+        Assert.InRange(box.L, 99, 101);
+        Assert.InRange(box.T, 199, 201);
+        Assert.InRange(box.R, 178, 180);
+        Assert.InRange(box.B, 228, 230);
+    }
+}

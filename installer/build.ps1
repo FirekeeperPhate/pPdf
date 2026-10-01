@@ -1,0 +1,61 @@
+# Builds the pPdf installers (Inno Setup).
+#   .\build.ps1                -> Light and Full
+#   .\build.ps1 -Flavor Full   -> Full only
+#   .\build.ps1 -SkipTests     -> skip the unit tests
+# Light = framework-dependent (needs the .NET 10 Desktop Runtime), Full = self-contained (runtime included).
+# Output: installer\Output\pPdf-Setup-<version>-<Light|Full>.exe
+
+param(
+    [ValidateSet('Light', 'Full', 'All')]
+    [string]$Flavor = 'All',
+    [switch]$SkipTests
+)
+
+$ErrorActionPreference = 'Stop'
+$root = Split-Path $PSScriptRoot -Parent
+$project = Join-Path $root 'src\pPdf\pPdf.csproj'
+
+$iscc = @(
+    "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $iscc) { throw 'ISCC.exe (Inno Setup) not found.' }
+
+$version = ([xml](Get-Content $project -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+if (-not $version) { throw 'Version not found in pPdf.csproj.' }
+
+if (-not $SkipTests) {
+    Write-Host '== Tests' -ForegroundColor Cyan
+    dotnet test (Join-Path $root 'tests\pPdf.Tests') -c Release -nologo
+    if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+}
+
+$flavors = if ($Flavor -eq 'All') { @('Light', 'Full') } else { @($Flavor) }
+
+foreach ($f in $flavors) {
+    $out = Join-Path $root ('publish\' + $f.ToLower())
+    if (Test-Path $out) { Remove-Item $out -Recurse -Force }   # no leftovers from previous builds
+    $selfContained = if ($f -eq 'Full') { 'true' } else { 'false' }
+
+    Write-Host "== Publish $f $version (self-contained: $selfContained)" -ForegroundColor Cyan
+    dotnet publish $project -c Release -r win-x64 --self-contained $selfContained -o $out -nologo
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish ($f) failed." }
+    if (-not (Test-Path (Join-Path $out 'pdfium.dll'))) { throw 'pdfium.dll is missing from the publish folder.' }
+    if ($f -eq 'Full') {
+        # The .NET runtime ships with the Full edition: its license and notices go with it.
+        $deps = Get-Content (Join-Path $out 'pPdf.deps.json') -Raw
+        if ($deps -notmatch 'runtimepack\.Microsoft\.NETCore\.App\.Runtime\.win-x64/([\d.]+)') { throw 'Runtime pack version not found.' }
+        $packs = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
+        $pack = Join-Path $packs "microsoft.netcore.app.runtime.win-x64\$($Matches[1])"
+        Copy-Item (Join-Path $pack 'LICENSE.TXT') (Join-Path $out 'dotnet-LICENSE.txt')
+        Copy-Item (Join-Path $pack 'THIRD-PARTY-NOTICES.TXT') (Join-Path $out 'dotnet-THIRD-PARTY-NOTICES.txt')
+    }
+
+    Write-Host "== Installer $f" -ForegroundColor Cyan
+    & $iscc /Q "/DFlavor=$f" "/DAppVersion=$version" (Join-Path $PSScriptRoot 'pPdf.iss')
+    if ($LASTEXITCODE -ne 0) { throw "ISCC ($f) failed." }
+}
+
+Get-ChildItem (Join-Path $PSScriptRoot 'Output') -Filter "pPdf-Setup-$version-*.exe" |
+    Select-Object Name, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } }

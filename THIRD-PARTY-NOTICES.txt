@@ -1,0 +1,18 @@
+pPdf uses the following third-party components.
+
+PDFium (via the PDFiumCore NuGet package, https://github.com/Dtronix/PDFiumCore)
+  PDF rendering, text extraction, links and outline.
+  License: Apache License 2.0 - https://www.apache.org/licenses/LICENSE-2.0
+  PDFium: Copyright (c) The PDFium Authors. https://pdfium.googlesource.com/pdfium/
+
+PDFsharp (PDFsharp-wpf, https://docs.pdfsharp.net/)
+  Writing annotations into PDF pages.
+  License: MIT
+  Copyright (c) PDFsharp Team
+
+CommunityToolkit.Mvvm (https://github.com/CommunityToolkit/dotnet)
+  License: MIT
+  Copyright (c) .NET Foundation and Contributors
+
+The Full edition of the installer also contains the .NET runtime
+(dotnet-LICENSE.txt and dotnet-THIRD-PARTY-NOTICES.txt next to the program).
