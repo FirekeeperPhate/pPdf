@@ -25,6 +25,9 @@ public partial class MainWindow : Window
     bool _forceClose;
     bool _busy;
 
+    /// <summary>No document and nothing being opened: a new file can use this window.</summary>
+    public bool IsEmpty => _pdf == null && !_busy;
+
     public MainWindow(AppSettings settings)
     {
         _settings = settings;
@@ -42,6 +45,7 @@ public partial class MainWindow : Window
         Viewer.SelectionChanged += (_, _) => UpdateUi();
         Viewer.Annotations.HistoryChanged += UpdateUi;
 
+        InitMemoryTrim();
         InitSearch();
         InitSidebar();
         BuildRecentList();
@@ -130,6 +134,41 @@ public partial class MainWindow : Window
     // ------------------------------------------------------------------ window events
 
     void OnLoaded(object sender, RoutedEventArgs e) => ThemeService.ApplyTitleBar(this);
+
+    // ------------------------------------------------------------------ memory
+
+    readonly System.Windows.Threading.DispatcherTimer _trimTimer = new() { Interval = TimeSpan.FromSeconds(20) };
+    bool _trimmed;
+
+    void InitMemoryTrim()
+    {
+        _trimTimer.Tick += (_, _) =>
+        {
+            _trimTimer.Stop();
+            if (WindowState != WindowState.Minimized) return;
+            // minimized for a while: drop the bitmaps and the caches, and hand the freed memory back to the system
+            _trimmed = true;
+            Viewer.TrimMemory();
+            MemoryTrimmer.Trim();
+        };
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        if (WindowState == WindowState.Minimized)
+        {
+            _trimTimer.Stop();
+            _trimTimer.Start();
+            return;
+        }
+        _trimTimer.Stop();
+        if (_trimmed)
+        {
+            _trimmed = false;
+            Viewer.ResumeAfterTrim();
+        }
+    }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -483,6 +522,9 @@ public partial class MainWindow : Window
         save.Click += (_, _) => _ = SaveCopyAsync();
         menu.Items.Add(save);
         menu.Items.Add(new Separator());
+        var newWindow = new MenuItem { Header = "New window", InputGestureText = "Ctrl+N" };
+        newWindow.Click += (_, _) => ((App)Application.Current).NewWindow();
+        menu.Items.Insert(0, newWindow);
         var check = new MenuItem { Header = "Check for updates..." };
         check.Click += (_, _) => _ = CheckForUpdatesAsync(manual: true);
         menu.Items.Add(check);
@@ -533,12 +575,19 @@ public partial class MainWindow : Window
         };
         if (dlg.ShowDialog(this) != true) return false;
 
+        if (_pdf.IsOnDemand && string.Equals(Path.GetFullPath(dlg.FileName), Path.GetFullPath(_path!), StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this, "This is a very large file: pPdf reads it from disk while it is open, so it cannot be overwritten. Save the copy with another name.",
+                "pPdf", MessageBoxButton.OK, MessageBoxImage.Information);
+            return false;
+        }
+
         var pdf = _pdf;
         var anns = Viewer.Annotations.Items.ToList();
         SetBusy(true, "Saving...");
         try
         {
-            byte[] bytes = await Task.Run(() => anns.Count == 0 ? pdf.Data : PdfAnnotationWriter.Apply(pdf.Data, pdf.Password, anns));
+            byte[] bytes = await Task.Run(() => anns.Count == 0 ? pdf.GetBytes() : PdfAnnotationWriter.Apply(pdf.GetBytes(), pdf.Password, anns));
             await File.WriteAllBytesAsync(dlg.FileName, bytes);
             Viewer.Annotations.MarkSaved();
             UpdateUi();
@@ -603,6 +652,7 @@ public partial class MainWindow : Window
             switch (key)
             {
                 case Key.O: _ = BrowseAndOpenAsync(); e.Handled = true; return;
+                case Key.N: ((App)Application.Current).NewWindow(); e.Handled = true; return;
                 case Key.S when _pdf != null: _ = SaveCopyAsync(); e.Handled = true; return;
                 case Key.P when _pdf != null: _ = PrintAsync(); e.Handled = true; return;
                 case Key.F when _pdf != null: ShowFind(); e.Handled = true; return;

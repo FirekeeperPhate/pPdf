@@ -10,8 +10,13 @@ public partial class MainWindow
     bool _checkingUpdates;
 
     /// <summary>The check after startup: waits until the window is up so launching stays fast.</summary>
+    static bool _startupCheckScheduled;
+
     void ScheduleStartupUpdateCheck()
     {
+        // one check per process, from its first window
+        if (_startupCheckScheduled) return;
+        _startupCheckScheduled = true;
         if (Environment.GetEnvironmentVariable("PPDF_NO_STARTUP") == "1") return; // UI test harness
         _ = Task.Run(UpdateService.CleanUp);
         _ = Dispatcher.InvokeAsync(async () =>
@@ -102,9 +107,14 @@ public partial class MainWindow
                 "pPdf", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-        // the update closes pPdf: annotations that were never saved first
-        bool wasDirty = Viewer.Annotations.IsDirty;
-        if (!await ConfirmDiscardAnnotationsAsync()) return;
+        // the update closes every pPdf window: annotations that were never saved first, in each of them
+        var windows = Application.Current.Windows.OfType<MainWindow>().ToList();
+        var wasDirty = windows.ToDictionary(w => w, w => w.Viewer.Annotations.IsDirty);
+        foreach (var w in windows)
+        {
+            w.Activate();
+            if (!await w.ConfirmDiscardAnnotationsAsync()) return;
+        }
 
         string installer;
         SetBusy(true, $"Downloading pPdf {version}...");
@@ -123,8 +133,11 @@ public partial class MainWindow
         SetBusy(false);
 
         // annotations added while downloading: ask again
-        Viewer.CommitEdits();
-        if (!wasDirty && Viewer.Annotations.IsDirty && !await ConfirmDiscardAnnotationsAsync()) return;
+        foreach (var w in windows)
+        {
+            w.Viewer.CommitEdits();
+            if (!wasDirty[w] && w.Viewer.Annotations.IsDirty && !await w.ConfirmDiscardAnnotationsAsync()) return;
+        }
 
         SetBusy(true, $"Installing pPdf {version}...");
         bool started = await CloseForUpdateAsync(installer, _path);
@@ -161,8 +174,9 @@ public partial class MainWindow
                 if (!ready.WaitOne(0)) return false;
             }
         }
-        _forceClose = true; // the annotations were already confirmed or discarded
-        Close();
+        // the annotations were already confirmed or discarded in every window: close them all, which ends the process
+        foreach (var w in Application.Current.Windows.OfType<MainWindow>()) w._forceClose = true;
+        Application.Current.Shutdown();
         return true;
     }
 }

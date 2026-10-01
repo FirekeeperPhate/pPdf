@@ -100,3 +100,48 @@ public class PdfFileTests
         Assert.Single(hits);
     }
 }
+
+[Collection("OnDemand")]
+public class OnDemandFileTests
+{
+    [Fact]
+    public void A_file_above_the_threshold_is_read_from_disk_on_demand()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "ppdf-ondemand-" + Guid.NewGuid().ToString("N") + ".pdf");
+        var bytes = TestPdf.Simple();
+        File.WriteAllBytes(path, bytes);
+        long old = PdfFile.OnDemandThreshold;
+        PdfFile.OnDemandThreshold = 100;
+        try
+        {
+            using (var pdf = PdfFile.Open(path))
+            {
+                Assert.True(pdf.IsOnDemand);
+                Assert.Equal(3, pdf.PageCount);
+                Assert.Contains("needle", pdf.LoadText(1, true)!.Text);
+                Assert.NotNull(pdf.Render(0, 300, 400, new System.Windows.Int32Rect(0, 0, 300, 400), 0, false));
+                Assert.Equal(bytes, pdf.GetBytes());
+                // the file stays open for reading: it cannot be changed under PDFium's feet
+                Assert.Throws<IOException>(() => File.WriteAllBytes(path, [1, 2, 3]));
+            }
+            File.Delete(path); // released on dispose
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            PdfFile.OnDemandThreshold = old;
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void A_wrong_file_above_the_threshold_still_gives_a_clean_error()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "ppdf-bad-" + Guid.NewGuid().ToString("N") + ".pdf");
+        File.WriteAllBytes(path, new byte[500]);
+        long old = PdfFile.OnDemandThreshold;
+        PdfFile.OnDemandThreshold = 100;
+        try { Assert.Throws<PdfException>(() => PdfFile.Open(path)); File.Delete(path); }
+        finally { PdfFile.OnDemandThreshold = old; if (File.Exists(path)) File.Delete(path); }
+    }
+}

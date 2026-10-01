@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- One pPdf process for everything: starting pPdf again (for example a double-click on another PDF) hands the file to the running one, which opens it in a new window. Three documents now take about 215 MB in total instead of about 450 MB. Ctrl+N or More > New window opens an empty window.
+- Lower memory: the page cache is sized on your screen (about three screens of bitmaps, between 64 and 192 MB) instead of a fixed 384 MB and is shared by all windows; after 20 seconds minimized the bitmaps and caches are released and the working set drops to a few MB.
+- Very big PDFs (over 64 MB) are read from disk when needed instead of being loaded into memory; while one is open it cannot be overwritten.
+- Less rendering work: only a third of a screen is prefetched above and below, a blank page first shows a quick half-size draft, thumbnails are only rendered while the panel is open.
+- Runtime tuning: no background GC thread, no dynamic PGO.
+
 ## 0.1.2
 
 - Fixed the drop-down menus (page layout, theme, More): their items were drawn as empty squares because they inherited the icon font of the toolbar button. Tooltips now have an explicit text font too.

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using System.Text;
 using System.Windows;
 using System.Windows.Media;
@@ -25,26 +26,42 @@ public sealed class OutlineNode
 /// <summary>
 /// A PDF document backed by PDFium. PDFium is not thread safe: every call into it happens under <see cref="Sync"/>,
 /// and the UI thread never takes that lock (it works on the results cached by the background loaders).
-/// The file is read into memory, so the original can be overwritten while it is open.
+/// Normal files are read into memory, so the original can be overwritten while it is open; very big ones are read from disk on demand.
 /// </summary>
 public sealed class PdfFile : IDisposable
 {
     internal static readonly object Sync = new();
     static bool _initialized;
 
-    readonly byte[] _data;
+    /// <summary>Files bigger than this are read from disk when PDFium needs a part of them, instead of being held in memory.</summary>
+    internal static long OnDemandThreshold = 64L << 20;
+
+    readonly byte[]? _data;
+    // on-demand files: the open file, and the callback object PDFium keeps calling (both must outlive the document)
+    readonly SafeFileHandle? _file;
+    readonly FPDF_FILEACCESS? _access;
+    readonly PDFiumCore.Delegates.Func_int___IntPtr_uint_bytePtr_uint? _getBlock;
     FpdfDocumentT? _doc;
 
     public string? Path { get; }
-    public byte[] Data => _data;
     public string? Password { get; }
     public int PageCount { get; }
     public PageSize[] Pages { get; }
 
-    PdfFile(string? path, byte[] data, FpdfDocumentT doc, string? password)
+    /// <summary>True when the file stays on disk and is read on demand (it cannot be overwritten while it is open).</summary>
+    public bool IsOnDemand => _file != null;
+
+    /// <summary>The bytes of the document (for saving a copy): the in-memory copy, or the file read again.</summary>
+    public byte[] GetBytes() => _data ?? File.ReadAllBytes(Path!);
+
+    PdfFile(string? path, byte[]? data, SafeFileHandle? file, FPDF_FILEACCESS? access, PDFiumCore.Delegates.Func_int___IntPtr_uint_bytePtr_uint? getBlock,
+        FpdfDocumentT doc, string? password)
     {
         Path = path;
         _data = data;
+        _file = file;
+        _access = access;
+        _getBlock = getBlock;
         _doc = doc;
         Password = password;
         lock (Sync)
@@ -73,6 +90,9 @@ public sealed class PdfFile : IDisposable
 
     public static PdfFile Open(string path, string? password = null)
     {
+        long length = new FileInfo(path).Length;
+        if (length > OnDemandThreshold && length <= uint.MaxValue) return OpenOnDemand(path, length, password);
+
         // read straight into the pinned buffer PDFium will keep using: no second copy of a big file
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         var pinned = GC.AllocateUninitializedArray<byte>(checked((int)stream.Length), pinned: true);
@@ -95,20 +115,57 @@ public sealed class PdfFile : IDisposable
         {
             var ptr = Marshal.UnsafeAddrOfPinnedArrayElement(pinned, 0);
             doc = fpdfview.FPDF_LoadMemDocument64(ptr, (ulong)pinned.Length, password);
+            if (doc == null) throw LoadError(password);
+        }
+        return new PdfFile(path, pinned, null, null, null, doc, password);
+    }
+
+    /// <summary>A big file is not loaded: PDFium asks for the blocks it needs (the xref, the pages on screen).</summary>
+    static unsafe PdfFile OpenOnDemand(string path, long length, string? password)
+    {
+        EnsureLibrary();
+        var file = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.RandomAccess);
+        PDFiumCore.Delegates.Func_int___IntPtr_uint_bytePtr_uint getBlock = (param, position, buffer, size) =>
+        {
+            try
+            {
+                uint done = 0;
+                while (done < size)
+                {
+                    int n = RandomAccess.Read(file, new Span<byte>(buffer + done, (int)(size - done)), position + done);
+                    if (n <= 0) return 0;
+                    done += (uint)n;
+                }
+                return 1;
+            }
+            catch (Exception) { return 0; } // never let an exception cross into native code
+        };
+        var access = new FPDF_FILEACCESS { MFileLen = (uint)length, MGetBlock = getBlock, MParam = IntPtr.Zero };
+        FpdfDocumentT? doc;
+        lock (Sync)
+        {
+            doc = fpdfview.FPDF_LoadCustomDocument(access, password);
             if (doc == null)
             {
-                uint err = fpdfview.FPDF_GetLastError();
-                throw err switch
-                {
-                    4 => new PdfPasswordException(password == null ? "This document is password protected." : "Wrong password."),
-                    3 => new PdfException("The file is not a valid PDF document."),
-                    2 => new PdfException("The file could not be read."),
-                    5 => new PdfException("The document uses an unsupported security handler."),
-                    _ => new PdfException("The document could not be opened (error " + err + ")."),
-                };
+                var error = LoadError(password);
+                file.Dispose();
+                throw error;
             }
         }
-        return new PdfFile(path, pinned, doc, password);
+        return new PdfFile(path, null, file, access, getBlock, doc, password);
+    }
+
+    static PdfException LoadError(string? password)
+    {
+        uint err = fpdfview.FPDF_GetLastError();
+        return err switch
+        {
+            4 => new PdfPasswordException(password == null ? "This document is password protected." : "Wrong password."),
+            3 => new PdfException("The file is not a valid PDF document."),
+            2 => new PdfException("The file could not be read."),
+            5 => new PdfException("The document uses an unsupported security handler."),
+            _ => new PdfException("The document could not be opened (error " + err + ")."),
+        };
     }
 
     public void Dispose()
@@ -119,6 +176,9 @@ public sealed class PdfFile : IDisposable
             fpdfview.FPDF_CloseDocument(_doc);
             _doc = null;
         }
+        _file?.Dispose();
+        GC.KeepAlive(_access);
+        GC.KeepAlive(_getBlock);
     }
 
     public bool IsDisposed => _doc == null;

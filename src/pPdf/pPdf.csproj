@@ -17,7 +17,14 @@
     <!-- ThemeMode (the Fluent theme) is still marked experimental in WPF -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Keep the process small: no background GC thread, no dynamic PGO instrumentation, compact the big-object heap more eagerly -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>false</TieredPGO>
   </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="3" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

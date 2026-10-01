@@ -15,10 +15,25 @@ public partial class MainWindow
         ThumbList.PreviewMouseLeftButtonUp += (_, _) => Viewer.Focus();
     }
 
+    List<ThumbItem>? _thumbItems;
+
+    /// <summary>Thumbnails are only rendered while the panel is open on the Pages tab.</summary>
+    bool ThumbsActive => _pdf != null && _settings.SidebarVisible && ThumbTab.IsChecked == true;
+
+    /// <summary>The rows that were built while the panel was hidden never asked for their bitmap: build them again now.</summary>
+    void RefreshThumbs()
+    {
+        if (_thumbItems == null || !ThumbsActive) return;
+        ThumbList.ItemsSource = null;
+        ThumbList.ItemsSource = _thumbItems;
+        SyncSidebarSelection();
+    }
+
     void LoadSidebar(PdfFile pdf)
     {
         var items = new List<ThumbItem>(pdf.PageCount);
         for (int i = 0; i < pdf.PageCount; i++) items.Add(new ThumbItem(i, pdf.Pages[i]));
+        _thumbItems = items;
         ThumbList.ItemsSource = items;
 
         OutlineTree.ItemsSource = null;
@@ -36,6 +51,7 @@ public partial class MainWindow
 
     void ClearSidebar()
     {
+        _thumbItems = null;
         ThumbList.ItemsSource = null;
         OutlineTree.ItemsSource = null;
         OutlineEmpty.Visibility = Visibility.Collapsed;
@@ -43,7 +59,7 @@ public partial class MainWindow
 
     void OnThumbLoaded(object sender, RoutedEventArgs e)
     {
-        if (_pdf != null && sender is FrameworkElement { DataContext: ThumbItem item })
+        if (ThumbsActive && sender is FrameworkElement { DataContext: ThumbItem item })
             item.RequestLoad(Viewer.Renderer, _pdf, VisualTreeHelper_Dpi());
     }
 
@@ -79,7 +95,7 @@ public partial class MainWindow
         OutlineTree.Visibility = thumbs ? Visibility.Collapsed : Visibility.Visible;
         OutlineEmpty.Visibility = !thumbs && _pdf != null && OutlineTree.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         _settings.SidebarOutline = !thumbs;
-        if (thumbs) SyncSidebarSelection();
+        if (thumbs) RefreshThumbs();
     }
 
     void OnSidebarToggle(object sender, RoutedEventArgs e) => SetSidebar(SidebarToggle.IsChecked == true);
@@ -92,7 +108,7 @@ public partial class MainWindow
         SidebarToggle.IsChecked = visible;
         SidebarColumn.Width = new GridLength(visible ? _settings.SidebarWidth : 0);
         SidebarSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        if (visible) SyncSidebarSelection();
+        if (visible) RefreshThumbs();
     }
 
     void OnSplitterDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)

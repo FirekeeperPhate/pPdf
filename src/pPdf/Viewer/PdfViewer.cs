@@ -27,7 +27,7 @@ public sealed partial class PdfViewer : Grid
     readonly DispatcherTimer _settleTimer;
     readonly DispatcherTimer _snapTimer;
 
-    RenderService _renderer = new();
+    readonly RenderService _renderer = RenderService.Shared;
     PdfFile? _pdf;
 
     ViewLayout _layout = ViewLayout.Continuous;
@@ -172,6 +172,19 @@ public sealed partial class PdfViewer : Grid
         RaiseStateChanged();
         Focus();
     }
+
+    /// <summary>
+    /// Lets go of every rendered bitmap and of the text of pages out of view (the window is minimized: nobody is looking).
+    /// <see cref="ResumeAfterTrim"/> brings the visible pages back.
+    /// </summary>
+    public void TrimMemory()
+    {
+        foreach (var s in _slots.Values) { s.CancelRender(); s.ClearBitmap(); }
+        foreach (int p in _texts.Keys.Where(p => !_slots.ContainsKey(p)).ToArray()) _texts.Remove(p);
+        _renderer.Clear();
+    }
+
+    public void ResumeAfterTrim() => UpdateVisible();
 
     public void Close()
     {
@@ -433,7 +446,8 @@ public sealed partial class PdfViewer : Grid
         if (_pdf == null || _result == null || _inLayout) return;
         double dpi = DpiScale;
         var view = new Rect(_scroll.HorizontalOffset, _scroll.VerticalOffset, Math.Max(1, _scroll.ViewportWidth), Math.Max(1, _scroll.ViewportHeight));
-        var near = Rect.Inflate(view, view.Width * 0.25, view.Height * 0.75);
+        // a little room above and below only: pages further away are not worth a render nobody may ever look at
+        var near = Rect.Inflate(view, 0, view.Height * 0.35);
 
         // pages to keep alive
         var wanted = new List<int>();
@@ -522,7 +536,26 @@ public sealed partial class PdfViewer : Grid
         slot.Cts = cts;
         slot.PendingKey = key;
         var pdf = _pdf;
+        // a page that appears empty on screen gets a quick half-size draft first (a quarter of the work), the full render follows
+        if (priority == 0 && slot.ShownKey == null && !partial && (long)fullW * fullH > 600_000)
+        {
+            var draft = new RenderKey(slot.PageIndex, Math.Max(1, fullW / 2), Math.Max(1, fullH / 2), 0, 0, Math.Max(1, fullW / 2), Math.Max(1, fullH / 2), _rotation, _invert);
+            _ = AwaitDraft(slot, pdf, draft, cts);
+        }
         _ = AwaitRender(slot, pdf, key, priority, cts);
+    }
+
+    async Task AwaitDraft(PageSlot slot, PdfFile pdf, RenderKey draft, CancellationTokenSource cts)
+    {
+        try
+        {
+            var bmp = await _renderer.RenderAsync(pdf, draft, -1, cts.Token);
+            if (bmp == null || cts.IsCancellationRequested || _pdf != pdf) return;
+            // only while the page is still blank: the full render may already have arrived
+            if (_slots.TryGetValue(slot.PageIndex, out var live) && live == slot && slot.ShownKey == null) slot.ShowBitmap(bmp, draft);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine("draft failed: " + ex.Message); }
     }
 
     async Task AwaitRender(PageSlot slot, PdfFile pdf, RenderKey key, int priority, CancellationTokenSource cts)

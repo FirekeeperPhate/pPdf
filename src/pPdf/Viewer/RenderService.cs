@@ -40,7 +40,13 @@ public sealed class RenderService : IDisposable
 
     sealed record CacheEntry((PdfFile Pdf, RenderKey Key) Id, BitmapSource Bitmap);
 
-    public RenderService(long cacheBudgetBytes = 384L * 1024 * 1024)
+    /// <summary>One service (one thread, one budget) for every window of the process.</summary>
+    public static RenderService Shared { get; } = new(AdaptiveBudget());
+
+    /// <summary>About three full screens of bitmaps: enough to scroll back and forth, far less than a fixed 384 MB.</summary>
+    static long AdaptiveBudget() => Math.Clamp(Services.MemoryTrimmer.ScreenPixels() * 4 * 3, 64L << 20, 192L << 20);
+
+    public RenderService(long cacheBudgetBytes)
     {
         _budget = cacheBudgetBytes;
         _worker = new Thread(Run) { IsBackground = true, Name = "pPdf render", Priority = ThreadPriority.BelowNormal };
