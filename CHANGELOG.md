@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.5
 
 - pPdf remembers where each document was left: the exact point in the page (not just the page), the zoom and the rotation, for the last 200 documents. The position is also written a few seconds after you stop scrolling, so even a crash does not lose it. Positions saved by older versions (page only) are still used.
 
