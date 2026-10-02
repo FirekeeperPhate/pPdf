@@ -2,7 +2,7 @@
 
 A small, fast PDF reader for Windows (.NET 10, WPF), with light and dark theme: search, text selection, highlights, text and image annotations, fillable forms, printing, and it reopens every document where you left it.
 
-[![Latest release](https://img.shields.io/github/v/release/FirekeeperPhate/pPdf?label=latest%20release)](https://github.com/FirekeeperPhate/pPdf/releases/latest)
+[![Download the latest release](https://img.shields.io/badge/download-latest%20release-2EA44F)](https://github.com/FirekeeperPhate/pPdf/releases/latest)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)
 
