@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Changing the theme (or the system switching between light and dark) keeps the document where it was instead of jumping back to the first page.
+
 ## 0.2.0
 
 - **Annotations are kept**: text boxes, images and markups you add are saved automatically (a moment after each change, and when you close) in `%AppData%\pPdf\annotations` and come back, still editable, the next time you open the same file. Closing no longer asks to save: *Save a copy* is only for writing them into a PDF. The PDF itself is never modified.

@@ -13,6 +13,8 @@ public static class ThemeService
 
     public static bool IsDark { get; private set; }
     public static event EventHandler? Changed;
+    /// <summary>Just before the controls are re-themed (which re-templates them and resets things like scroll positions).</summary>
+    public static event EventHandler? Changing;
 
     public static void Apply(AppTheme theme)
     {
@@ -39,6 +41,7 @@ public static class ThemeService
             AppTheme.Light => false,
             _ => SystemUsesDarkApps(),
         };
+        Changing?.Invoke(null, EventArgs.Empty);
         app.ThemeMode = _theme switch
         {
             AppTheme.Dark => ThemeMode.Dark,

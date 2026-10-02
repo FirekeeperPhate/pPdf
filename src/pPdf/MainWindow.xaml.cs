@@ -49,6 +49,7 @@ public partial class MainWindow : Window
 
         InitMemoryTrim();
         InitPositionSaving();
+        InitThemeKeeping();
         InitSearch();
         InitSidebar();
         BuildRecentList();
@@ -181,6 +182,25 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         ThemeService.ApplyTitleBar(this);
+    }
+
+    // changing the theme re-templates the controls, which sends the document back to the top: put it back where it was
+    Action? _restoreView;
+
+    void InitThemeKeeping()
+    {
+        ThemeService.Changing += OnThemeChanging;
+        ThemeService.Changed += OnThemeChanged;
+        Closed += (_, _) => { ThemeService.Changing -= OnThemeChanging; ThemeService.Changed -= OnThemeChanged; };
+    }
+
+    void OnThemeChanging(object? sender, EventArgs e) => _restoreView = _pdf == null ? null : Viewer.CaptureView();
+
+    void OnThemeChanged(object? sender, EventArgs e)
+    {
+        var restore = _restoreView;
+        _restoreView = null;
+        if (restore != null) Dispatcher.BeginInvoke(restore, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)

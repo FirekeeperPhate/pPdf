@@ -207,6 +207,23 @@ public sealed partial class PdfViewer : Grid
         };
     }
 
+    /// <summary>
+    /// Notes where the view is (also sideways) and returns what puts it back. The controls lose their scroll position when the theme
+    /// changes, so the window takes this before and calls the result after.
+    /// </summary>
+    public Action CaptureView()
+    {
+        var position = CapturePosition();
+        double x = _scroll.HorizontalOffset;
+        return () =>
+        {
+            if (position == null || _pdf == null || _result == null) return;
+            _scroll.UpdateLayout();
+            MoveTo(position);
+            _scroll.ScrollToHorizontalOffset(x);
+        };
+    }
+
     /// <summary>The vertical offset that puts a row at the top of the window (the same one <see cref="GoToPage"/> scrolls to).</summary>
     double RowTopOffset(int row) => IsPaged ? _result!.RowSlots[row].Top : Math.Max(0, _result!.RowRects[row].Top - PageMargin);
 
