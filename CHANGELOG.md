@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - Changing the theme (or the system switching between light and dark) keeps the document where it was instead of jumping back to the first page.
 
