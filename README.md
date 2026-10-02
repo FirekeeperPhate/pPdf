@@ -39,3 +39,7 @@ dotnet test
 ```
 
 Settings live in `%AppData%\pPdf\settings.json` (`PPDF_DATA_DIR` overrides the folder). `tools/DrawIcon.cs` regenerates the icon.
+
+## License
+
+[MIT](LICENSE). The third-party components pPdf uses (PDFium, PDFsharp and others) keep their own licenses, listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
