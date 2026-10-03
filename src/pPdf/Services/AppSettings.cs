@@ -67,7 +67,17 @@ public sealed class AppSettings
         }
     }
 
-    static string FilePath => Path.Combine(Folder, "settings.json");
+    /// <summary>For things that can be rebuilt (converted books): local to this PC, not roaming. PPDF_DATA_DIR keeps it with the rest.</summary>
+    public static string CacheFolder
+    {
+        get
+        {
+            string? over = Environment.GetEnvironmentVariable("PPDF_DATA_DIR");
+            return !string.IsNullOrWhiteSpace(over) ? Path.Combine(over, "cache") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "pPdf");
+        }
+    }
+
+    static string FilePath =>Path.Combine(Folder, "settings.json");
 
     public static AppSettings Load()
     {

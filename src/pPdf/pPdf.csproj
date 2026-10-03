@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="PDFiumCore" Version="4688.0.0" />
     <PackageReference Include="PDFsharp-wpf" Version="6.2.4" />
   </ItemGroup>
@@ -35,6 +36,13 @@
   <ItemGroup>
     <None Include="../../THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- only the core of WebView2 is used (the engine runs hidden, to lay out books): leave its WinForms / WPF controls and the XML docs out -->
+  <Target Name="LeaveOutWebView2Extras" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.WinForms' Or '%(Filename)' == 'Microsoft.Web.WebView2.Wpf' Or ('%(Extension)' == '.xml' And $([System.String]::Copy('%(Filename)').StartsWith('Microsoft.Web.WebView2')))" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <InternalsVisibleTo Include="pPdf.Tests" />

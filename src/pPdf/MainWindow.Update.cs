@@ -21,6 +21,7 @@ public partial class MainWindow
         if (Environment.GetEnvironmentVariable("PPDF_NO_STARTUP") == "1") return; // UI test harness
         _ = Task.Run(UpdateService.CleanUp);
         _ = Task.Run(() => AnnotationPersistence.Default.Prune());
+        _ = Task.Run(Epub.EpubConverter.PruneCache);
         _ = Dispatcher.InvokeAsync(async () =>
         {
             await Task.Delay(3000);

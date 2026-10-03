@@ -173,7 +173,7 @@
                 <!-- shown while no document is open -->
                 <StackPanel x:Name="WelcomePanel" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460">
                     <TextBlock Text="&#xE8A5;" FontFamily="{StaticResource IconFont}" FontSize="56" HorizontalAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" />
-                    <TextBlock Text="Open a PDF to start reading" FontSize="20" HorizontalAlignment="Center" Margin="0,12,0,4" />
+                    <TextBlock Text="Open a PDF or an EPUB book to start reading" FontSize="20" HorizontalAlignment="Center" Margin="0,12,0,4" />
                     <TextBlock Text="Press Ctrl+O, or drop a file here." HorizontalAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" />
                     <Button Content="Open file..." HorizontalAlignment="Center" Margin="0,16,0,0" Padding="22,7" Click="OnOpenClick" />
                     <StackPanel x:Name="RecentPanel" Margin="0,24,0,0" />

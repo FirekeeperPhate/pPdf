@@ -1,6 +1,6 @@
 # pPdf
 
-A small, fast PDF reader for Windows (.NET 10, WPF), with light and dark theme: search, text selection, highlights, text and image annotations, fillable forms, printing, and it reopens every document where you left it.
+A small, fast PDF and EPUB reader for Windows (.NET 10, WPF), with light and dark theme: search, text selection, highlights, text and image annotations, fillable forms, printing, and it reopens every document where you left it.
 
 [![Download the latest release](https://img.shields.io/badge/download-latest%20release-2EA44F)](https://github.com/FirekeeperPhate/pPdf/releases/latest)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
@@ -20,6 +20,7 @@ Installs for the current user by default (an all-users install is offered too). 
 ## Features
 
 - **Viewing**: reopens each document exactly where you left it (page, point in the page, zoom, rotation); continuous, single page, two pages, two pages continuous; fit width / fit page / any zoom (Ctrl+wheel); rotation; thumbnails and outline panel; clickable links; optional inverted page colors for night reading.
+- **EPUB books**: open an `.epub` like a PDF (Ctrl+O, drag and drop, or "Open with"). The book is laid out into book-sized pages by the Microsoft Edge WebView2 engine that ships with Windows 10/11, with its table of contents in the outline panel and working links, then kept in a cache, so it reopens at once. Everything that works on a PDF works on the book: search, selection, highlights, notes, printing, night mode, remembered position; *Save a copy* turns it into a PDF. Books with DRM are not opened; scripts and online content inside a book never run.
 - **Text**: the pointer is an I-beam over text and an open hand elsewhere (drag the empty page to scroll); select (drag, double-click word, triple-click line, Ctrl+A) and copy; find across the whole document (accent/case-insensitive, match case, whole words) with highlighted hits.
 - **Annotations**: keyboard text boxes (font, size, bold/italic, color, fill), images (transparent PNG supported) that can be moved and resized, and highlight / underline / strike-through of selected text; paste or drop images; undo/redo. They are kept automatically for each document and come back, still editable, when it is opened again.
 - **Forms**: fillable AcroForm fields (text, check boxes, radio buttons, choices) can be filled in, kept, saved into a copy, printed and exported.

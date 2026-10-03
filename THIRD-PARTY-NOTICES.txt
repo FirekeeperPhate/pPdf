@@ -16,3 +16,8 @@ CommunityToolkit.Mvvm (https://github.com/CommunityToolkit/dotnet)
 
 The Full edition of the installer also contains the .NET runtime
 (dotnet-LICENSE.txt and dotnet-THIRD-PARTY-NOTICES.txt next to the program).
+
+Microsoft.Web.WebView2 (https://www.nuget.org/packages/Microsoft.Web.WebView2)
+  Lays out EPUB books into pages, through the Microsoft Edge WebView2 Runtime that is part of Windows.
+  License: Microsoft software license terms (BSD-style, see the package)
+  Copyright (c) Microsoft Corporation

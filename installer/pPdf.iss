@@ -55,7 +55,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
 RuntimeMissing=pPdf requires the .NET 10 Desktop Runtime (x64), which does not appear to be installed.%n%nYes = open the download page and close setup%nNo = install anyway%nCancel = close setup%n%nAlternatively use the Full edition, which includes the runtime.
-OpenWithTask=Add pPdf to the "Open with" menu of PDF files
+OpenWithTask=Add pPdf to the "Open with" menu of PDF and EPUB files
 
 [Tasks]
 Name: "openwith"; Description: "{cm:OpenWithTask}"
@@ -75,14 +75,24 @@ Root: HKA; Subkey: "Software\pPdf"; Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\pPdf.Document"; ValueType: string; ValueData: "PDF document"; Flags: uninsdeletekey; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\pPdf.Document\DefaultIcon"; ValueType: string; ValueData: "{app}\{#AppExe},0"; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\pPdf.Document\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExe}"" ""%1"""; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\pPdf.Book"; ValueType: string; ValueData: "EPUB book"; Flags: uninsdeletekey; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\pPdf.Book\DefaultIcon"; ValueType: string; ValueData: "{app}\{#AppExe},0"; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\pPdf.Book\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExe}"" ""%1"""; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#AppName}"; Flags: uninsdeletekey; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExe}"" ""%1"""; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""; Flags: uninsdeletekey; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".epub"; ValueData: ""; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "pPdf.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\.epub\OpenWithProgids"; ValueType: string; ValueName: "pPdf.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
 Root: HKA; Subkey: "Software\pPdf\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#AppName}"; Flags: uninsdeletekey; Tasks: openwith
-Root: HKA; Subkey: "Software\pPdf\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "PDF reader with text search, selection and annotations"; Tasks: openwith
+Root: HKA; Subkey: "Software\pPdf\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "PDF and EPUB reader with text search, selection and annotations"; Tasks: openwith
 Root: HKA; Subkey: "Software\pPdf\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pdf"; ValueData: "pPdf.Document"; Flags: uninsdeletekey; Tasks: openwith
+Root: HKA; Subkey: "Software\pPdf\Capabilities\FileAssociations"; ValueType: string; ValueName: ".epub"; ValueData: "pPdf.Book"; Tasks: openwith
 Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "pPdf"; ValueData: "Software\pPdf\Capabilities"; Flags: uninsdeletevalue; Tasks: openwith
+
+[UninstallDelete]
+; the converted books (they are rebuilt from the originals whenever needed)
+Type: filesandordirs; Name: "{localappdata}\pPdf"
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
@@ -130,10 +140,12 @@ end;
 procedure RemoveOpenWith;
 begin
   RegDeleteKeyIncludingSubkeys(HKA, 'Software\Classes\pPdf.Document');
+  RegDeleteKeyIncludingSubkeys(HKA, 'Software\Classes\pPdf.Book');
   RegDeleteKeyIncludingSubkeys(HKA, 'Software\Classes\Applications\{#AppExe}');
   RegDeleteKeyIncludingSubkeys(HKA, 'Software\pPdf\Capabilities');
   RegDeleteValue(HKA, 'Software\RegisteredApplications', 'pPdf');
   RegDeleteValue(HKA, 'Software\Classes\.pdf\OpenWithProgids', 'pPdf.Document');
+  RegDeleteValue(HKA, 'Software\Classes\.epub\OpenWithProgids', 'pPdf.Book');
 end;
 
 function OpenEvent(dwDesiredAccess: DWORD; bInheritHandle: BOOL; lpName: String): THandle;

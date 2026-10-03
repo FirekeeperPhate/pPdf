@@ -239,7 +239,7 @@ public partial class MainWindow : Window
     {
         if (e.Handled || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] files) return;
-        var pdf = files.FirstOrDefault(f => string.Equals(Path.GetExtension(f), ".pdf", StringComparison.OrdinalIgnoreCase));
+        var pdf = files.FirstOrDefault(f => Path.GetExtension(f).Equals(".pdf", StringComparison.OrdinalIgnoreCase) || Epub.EpubConverter.IsEpub(f));
         if (pdf != null)
         {
             e.Handled = true;
@@ -253,7 +253,7 @@ public partial class MainWindow : Window
 
     async Task BrowseAndOpenAsync()
     {
-        var dlg = new OpenFileDialog { Filter = "PDF documents (*.pdf)|*.pdf|All files (*.*)|*.*", Title = "Open PDF" };
+        var dlg = new OpenFileDialog { Filter = "PDF documents and books (*.pdf;*.epub)|*.pdf;*.epub|PDF documents (*.pdf)|*.pdf|EPUB books (*.epub)|*.epub|All files (*.*)|*.*", Title = "Open" };
         if (_path != null) dlg.InitialDirectory = Path.GetDirectoryName(_path);
         if (dlg.ShowDialog(this) == true) await OpenAsync(dlg.FileName);
     }
@@ -272,11 +272,17 @@ public partial class MainWindow : Window
         PdfFile? pdf = null;
         try
         {
+            // a book is turned into a PDF first (kept, so the next time it opens at once); everything below then treats it as one
+            string openPath = path;
+            if (Epub.EpubConverter.IsEpub(path))
+                openPath = await Epub.EpubConverter.ConvertAsync(path, new WindowInteropHelper(this).Handle,
+                    new Progress<string>(text => { if (_busy) BusyText.Text = Path.GetFileName(path) + ": " + text; }));
+
             string? password = null;
             bool wrong = false;
             while (pdf == null)
             {
-                try { pdf = await Task.Run(() => PdfFile.Open(path, password)); }
+                try { pdf = await Task.Run(() => PdfFile.Open(openPath, password)); }
                 catch (PdfPasswordException)
                 {
                     SetBusy(false);
@@ -607,7 +613,7 @@ public partial class MainWindow : Window
         menu.Items.Add(help);
         var about = new MenuItem { Header = "About pPdf" };
         about.Click += (_, _) => MessageBox.Show(this,
-            $"pPdf {typeof(App).Assembly.GetName().Version?.ToString(3)}\nA small PDF reader.\n\nRendering: PDFium. Saving annotations: PDFsharp.",
+            $"pPdf {typeof(App).Assembly.GetName().Version?.ToString(3)}\nA small PDF and EPUB reader.\n\nRendering: PDFium. Saving annotations: PDFsharp.",
             "About pPdf", MessageBoxButton.OK, MessageBoxImage.Information);
         menu.Items.Add(about);
         menu.IsOpen = true;
