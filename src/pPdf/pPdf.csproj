@@ -9,7 +9,7 @@
     <RootNamespace>pPdf</RootNamespace>
     <AssemblyName>pPdf</AssemblyName>
     <ApplicationIcon>Assets/pPdf.ico</ApplicationIcon>
-    <Version>0.2.1</Version>
+    <Version>0.3.0</Version>
     <Product>pPdf</Product>
     <Authors>Phate</Authors>
     <Copyright>Copyright (C) 2026 Phate</Copyright>
