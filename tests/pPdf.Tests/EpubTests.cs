@@ -59,6 +59,14 @@ public class EpubTests : IDisposable
     }
 
     [Fact]
+    public void Page_size_and_margins_come_after_the_books_own_styles()
+    {
+        string html = Open(TestEpub.Create(), "pagecss").BuildHtml();
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, "@page"));
+        Assert.True(html.IndexOf("@page") > html.IndexOf("/OEBPS/css/style.css"), "the @page rule must come last so a book's own @page cannot shrink the margins");
+    }
+
+    [Fact]
     public void Empty_elements_written_as_xhtml_do_not_swallow_what_follows()
     {
         string html = Open(TestEpub.Create()).BuildHtml();

@@ -14,7 +14,7 @@ namespace pPdf.Epub;
 public static class EpubConverter
 {
     /// <summary>Changes when the layout changes, so books are laid out again.</summary>
-    const int LayoutVersion = 1;
+    const int LayoutVersion = 2;
     const int MaxCachedBooks = 12;
 
     public static bool IsEpub(string path) => string.Equals(Path.GetExtension(path), ".epub", StringComparison.OrdinalIgnoreCase);

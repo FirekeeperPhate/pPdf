@@ -227,9 +227,10 @@ public sealed partial class EpubBook
     [GeneratedRegex(@"<(?!(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b)([a-zA-Z][\w:-]*)((?:[^<>""']|""[^""]*""|'[^']*')*?)\s*/>", RegexOptions.IgnoreCase)]
     private static partial Regex SelfClosingRx();
 
+    const string PageCss = "@page { size: 5.5in 8.5in; margin: 0.6in 0.55in; }";
+
     /// <summary>Printing styles first, so the book's own stylesheets can override them.</summary>
     const string BaseCss = """
-        @page { size: 5.5in 8.5in; margin: 0.6in 0.55in; }
         html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body { font-family: Georgia, 'Times New Roman', serif; font-size: 11.5pt; line-height: 1.45; color: #111; margin: 0; orphans: 2; widows: 2; overflow-wrap: break-word; }
         img, svg, video { max-width: 100%; height: auto; max-height: 7.2in; object-fit: contain; }
@@ -290,6 +291,8 @@ public sealed partial class EpubBook
         sb.Append("<style>").Append(BaseCss).Append("</style>\n");
         foreach (string l in styleLinks) sb.Append(l).Append('\n');
         foreach (string s in styles) sb.Append(s).Append('\n');
+        // last, so the page size and margins are ours: many books carry an @page rule of their own (a few points of margin, made for another reader)
+        sb.Append("<style>").Append(PageCss).Append("</style>\n");
         sb.Append("</head>\n<body>\n").Append(bodies).Append("</body>\n</html>\n");
         return sb.ToString();
     }
