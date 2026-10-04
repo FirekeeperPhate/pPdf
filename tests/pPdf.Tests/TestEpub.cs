@@ -68,7 +68,7 @@ static class TestEpub
     }
 
     /// <summary>Three chapters: the first links to the second (by file and by an anchor written as an empty element) and shows a picture.</summary>
-    public static byte[] Create(Action<ZipArchive>? extra = null, bool withSpine = true)
+    public static byte[] Create(Action<ZipArchive>? extra = null, bool withSpine = true, string spineExtra = "", string ch1Extra = "")
     {
         using var ms = new MemoryStream();
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
@@ -76,9 +76,9 @@ static class TestEpub
             void Add(string name, string text) { var e = zip.CreateEntry(name); using var w = new StreamWriter(e.Open(), new UTF8Encoding(false)); w.Write(text); }
             Add("mimetype", "application/epub+zip");
             Add("META-INF/container.xml", Container);
-            Add("OEBPS/content.opf", withSpine ? Opf() : Opf().Replace("<itemref idref=\"c1\"/><itemref idref=\"c2\"/><itemref idref=\"c3\"/>", ""));
+            Add("OEBPS/content.opf", withSpine ? Opf().Replace("<itemref idref=\"c3\"/>", "<itemref idref=\"c3\"/>" + spineExtra) : Opf().Replace("<itemref idref=\"c1\"/><itemref idref=\"c2\"/><itemref idref=\"c3\"/>", ""));
             Add("OEBPS/css/style.css", "p { margin: 0 0 0.5em 0; } h1 { color: #224488; } .main { }");
-            Add("OEBPS/text/ch1.xhtml", Chapter("Chapter One", "<p>Go to <a href=\"chapter%20two.xhtml#sec\">the second chapter</a> or <a href=\"#top\">the top</a>.</p>\n<p><img src=\"../images/pic.png\" alt=\"pic\"/></p>\n" + Paragraphs("First", 40)));
+            Add("OEBPS/text/ch1.xhtml", Chapter("Chapter One", "<p>Go to <a href=\"chapter%20two.xhtml#sec\">the second chapter</a> or <a href=\"#top\">the top</a>.</p>\n<p><img src=\"../images/pic.png\" alt=\"pic\"/></p>\n" + Paragraphs("First", 40) + ch1Extra));
             Add("OEBPS/text/chapter two.xhtml", Chapter("Chapter Two", "<a id=\"sec\"/><h2>A section</h2>\n<div class=\"x\"/>\n" + Paragraphs("Second", 30) + "<p><a href=\"ch1.xhtml\">back to the start</a> and <a href=\"https://example.com/x\">outside</a></p>"));
             Add("OEBPS/text/ch3.xhtml", Chapter("Chapter Three", Paragraphs("Third", 10)));
             var png = zip.CreateEntry("OEBPS/images/pic.png");

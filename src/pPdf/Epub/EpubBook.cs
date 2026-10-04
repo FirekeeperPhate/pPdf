@@ -52,10 +52,17 @@ public sealed partial class EpubBook
             foreach (var entry in zip.Entries)
             {
                 if (entry.FullName.EndsWith('/') || entry.Name.Length == 0) continue;
-                string target = System.IO.Path.GetFullPath(System.IO.Path.Combine(folder, entry.FullName.Replace('/', System.IO.Path.DirectorySeparatorChar)));
-                if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue; // an entry trying to leave the folder
-                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!);
-                entry.ExtractToFile(target, overwrite: true);
+                // one odd entry (a name Windows refuses, a damaged piece) must not cost the whole book: a missing picture is better than no book
+                try
+                {
+                    string[] parts = entry.FullName.Replace('\\', '/').Split('/');
+                    if (parts.Any(IsDeviceName)) continue; // CON, NUL, AUX...: Windows would open a device instead of making a file
+                    string target = System.IO.Path.GetFullPath(System.IO.Path.Combine(folder, string.Join(System.IO.Path.DirectorySeparatorChar, parts)));
+                    if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue; // an entry trying to leave the folder
+                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!);
+                    entry.ExtractToFile(target, overwrite: true);
+                }
+                catch (Exception ex) when (ex is NotSupportedException or ArgumentException or PathTooLongException or InvalidDataException) { }
             }
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or NotSupportedException)
@@ -66,6 +73,16 @@ public sealed partial class EpubBook
         var book = new EpubBook(folder);
         book.ReadPackage();
         return book;
+    }
+
+    static readonly HashSet<string> DeviceNames = new(StringComparer.OrdinalIgnoreCase)
+        { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
+
+    /// <summary>A file name Windows reads as a device, with or without an extension ("aux.xhtml" is still AUX).</summary>
+    static bool IsDeviceName(string part)
+    {
+        int dot = part.IndexOf('.');
+        return DeviceNames.Contains((dot < 0 ? part : part[..dot]).TrimEnd(' '));
     }
 
     static string? FindFile(string folder, string relative)
@@ -227,7 +244,9 @@ public sealed partial class EpubBook
     [GeneratedRegex(@"<(?!(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b)([a-zA-Z][\w:-]*)((?:[^<>""']|""[^""]*""|'[^']*')*?)\s*/>", RegexOptions.IgnoreCase)]
     private static partial Regex SelfClosingRx();
 
-    const string PageCss = "@page { size: 5.5in 8.5in; margin: 0.6in 0.55in; }";
+    static readonly string[] ImageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
+
+    const string PageCss ="@page { size: 5.5in 8.5in; margin: 0.6in 0.55in; }";
 
     /// <summary>Printing styles first, so the book's own stylesheets can override them.</summary>
     const string BaseCss = """
@@ -251,8 +270,16 @@ public sealed partial class EpubBook
 
         foreach (var chapter in _spine)
         {
-            string text = ReadText(System.IO.Path.Combine(Folder, chapter.Path.Replace('/', System.IO.Path.DirectorySeparatorChar)));
             string dir = DirectoryOf(chapter.Path);
+            if (ImageExtensions.Contains(System.IO.Path.GetExtension(chapter.Path), StringComparer.OrdinalIgnoreCase))
+            {
+                // a picture listed in the spine (against the specification, but it happens: a cover): it is shown as a page of its own
+                bodies.Append($"<div id=\"c{chapter.Index}\" class=\"ppdf-chapter\"")
+                      .Append(chapter.Index > 0 ? " style=\"break-before: page\">" : ">")
+                      .Append($"<img src=\"{UrlOf(chapter.Path)}\" alt=\"\"></div>\n");
+                continue;
+            }
+            string text = ReadText(System.IO.Path.Combine(Folder, chapter.Path.Replace('/', System.IO.Path.DirectorySeparatorChar)));
 
             string head = HeadRx().Match(text) is { Success: true } hm ? hm.Value : "";
             foreach (Match m in LinkRx().Matches(head))
@@ -270,9 +297,9 @@ public sealed partial class EpubBook
             else inner = HeadRx().Replace(text, "");
 
             inner = SelfClosingRx().Replace(inner, "<$1$2></$1>");
-            inner = IdAttrRx().Replace(inner, m => $"id=\"c{chapter.Index}_{(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)}\"");
+            inner = IdAttrRx().Replace(inner, m => $"id=\"c{chapter.Index}_{Quote(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)}\"");
             inner = AnchorRx().Replace(inner, a => NameAttrRx().Replace(a.Value, n =>
-                $"id=\"c{chapter.Index}_{(n.Groups[1].Success ? n.Groups[1].Value : n.Groups[2].Value)}\""));
+                $"id=\"c{chapter.Index}_{Quote(n.Groups[1].Success ? n.Groups[1].Value : n.Groups[2].Value)}\""));
             inner = UrlAttrRx().Replace(inner, m =>
             {
                 string name = m.Groups[1].Value, value = m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
@@ -297,6 +324,9 @@ public sealed partial class EpubBook
         return sb.ToString();
     }
 
+    /// <summary>An attribute value from the source, safe to put between double quotes (the source may have used single quotes around a double quote).</summary>
+    static string Quote(string raw) => raw.Replace("\"", "&quot;");
+
     static string ReadText(string path)
     {
         byte[] bytes = File.ReadAllBytes(path);
@@ -314,15 +344,15 @@ public sealed partial class EpubBook
         if (value.Length == 0 || SchemeRx().IsMatch(value) || value.StartsWith("//")) return System.Net.WebUtility.HtmlEncode(value);
 
         if (value.StartsWith('#'))
-            return resourceOnly ? System.Net.WebUtility.HtmlEncode(value) : "#c" + chapter.Index + "_" + value[1..];
+            return resourceOnly ? System.Net.WebUtility.HtmlEncode(value) : "#c" + chapter.Index + "_" + System.Net.WebUtility.HtmlEncode(value[1..]);
 
         string path = value, fragment = "";
         int hash = value.IndexOf('#');
         if (hash >= 0) { path = value[..hash]; fragment = value[(hash + 1)..]; }
         string full = Normalize(Combine(dir, Uri.UnescapeDataString(path)));
         if (!resourceOnly && _byPath.TryGetValue(full, out var target))
-            return fragment.Length > 0 ? $"#c{target.Index}_{fragment}" : $"#c{target.Index}";
-        return UrlOf(full) + (fragment.Length > 0 ? "#" + fragment : "");
+            return fragment.Length > 0 ? $"#c{target.Index}_{System.Net.WebUtility.HtmlEncode(fragment)}" : $"#c{target.Index}";
+        return UrlOf(full) + (fragment.Length > 0 ? "#" + System.Net.WebUtility.HtmlEncode(fragment) : "");
     }
 
     string ResolveResource(string dir, string value)

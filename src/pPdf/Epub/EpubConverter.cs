@@ -53,6 +53,7 @@ public static class EpubConverter
         if (string.IsNullOrEmpty(version)) throw new EpubException("The Microsoft Edge WebView2 Runtime is not available.");
 
         string work = Path.Combine(Path.GetTempPath(), "pPdf-epub-" + Guid.NewGuid().ToString("N")[..12]);
+        Interlocked.Increment(ref _active);
         try
         {
             progress?.Report("Reading the book...");
@@ -74,7 +75,7 @@ public static class EpubConverter
             }
 
             Directory.CreateDirectory(CacheFolder);
-            string tmp = pdfPath + ".tmp";
+            string tmp = pdfPath + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp"; // unique: two windows may convert the same book at once
             await File.WriteAllBytesAsync(tmp, pdf);
             File.Move(tmp, pdfPath, overwrite: true);
             _ = book;
@@ -82,9 +83,13 @@ public static class EpubConverter
         }
         finally
         {
+            Interlocked.Decrement(ref _active);
             _ = Task.Run(() => TryDeleteFolder(work));
         }
     }
+
+    /// <summary>Conversions running now: the housekeeping must not touch the browser's folder while one is.</summary>
+    static int _active;
 
     static async Task<byte[]> PrintAsync(string folder, IntPtr owner)
     {
@@ -118,8 +123,10 @@ public static class EpubConverter
             string args = """
                 {"printBackground":true,"preferCSSPageSize":true,"generateDocumentOutline":true,"displayHeaderFooter":false,"transferMode":"ReturnAsStream"}
                 """;
-            string reply = await web.CallDevToolsProtocolMethodAsync("Page.printToPDF", args);
-            using var doc = JsonDocument.Parse(reply);
+            var printing = web.CallDevToolsProtocolMethodAsync("Page.printToPDF", args);
+            if (await Task.WhenAny(printing, Task.Delay(TimeSpan.FromMinutes(10))) != printing)
+                throw new EpubException("The book took too long to lay out.");
+            using var doc = JsonDocument.Parse(await printing);
             if (!doc.RootElement.TryGetProperty("stream", out var streamId))
                 throw new EpubException("The book could not be turned into pages.");
             return await ReadStreamAsync(web, streamId.GetString()!);
@@ -166,10 +173,13 @@ public static class EpubConverter
             {
                 var files = new DirectoryInfo(CacheFolder).EnumerateFiles().OrderByDescending(f => f.LastWriteTimeUtc).ToList();
                 for (int i = 0; i < files.Count; i++)
-                    if (i >= MaxCachedBooks || files[i].Extension == ".tmp") try { files[i].Delete(); } catch (IOException) { }
+                {
+                    // a .tmp may be a conversion in progress in another window: only the old ones are leftovers
+                    bool staleTmp = files[i].Extension == ".tmp" && DateTime.UtcNow - files[i].LastWriteTimeUtc > TimeSpan.FromHours(1);
+                    if ((i >= MaxCachedBooks && files[i].Extension != ".tmp") || staleTmp) try { files[i].Delete(); } catch (IOException) { }
+                }
             }
-            string scratch = Path.Combine(AppSettings.CacheFolder, "webview");
-            TryDeleteFolder(scratch);
+            if (Volatile.Read(ref _active) == 0) TryDeleteFolder(Path.Combine(AppSettings.CacheFolder, "webview"));
             foreach (string leftover in Directory.EnumerateDirectories(Path.GetTempPath(), "pPdf-epub-*"))
                 if (DateTime.UtcNow - Directory.GetLastWriteTimeUtc(leftover) > TimeSpan.FromHours(1)) TryDeleteFolder(leftover);
         }

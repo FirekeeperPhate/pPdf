@@ -59,6 +59,39 @@ public class EpubTests : IDisposable
     }
 
     [Fact]
+    public void A_picture_listed_in_the_spine_becomes_a_page_of_its_own()
+    {
+        var book = Open(TestEpub.Create(spineExtra: "<itemref idref=\"pic\"/>"), "picspine");
+        Assert.Equal(4, book.Spine.Count);
+        string html = book.BuildHtml();
+        Assert.Contains("<div id=\"c3\" class=\"ppdf-chapter\" style=\"break-before: page\"><img src=\"/OEBPS/images/pic.png\" alt=\"\"></div>", html);
+        Assert.DoesNotContain("PNG", html); // the bytes of the picture are not read as text
+    }
+
+    [Fact]
+    public void Names_Windows_reads_as_devices_are_skipped_and_the_book_still_opens()
+    {
+        var book = Open(TestEpub.Create(z =>
+        {
+            foreach (string name in new[] { "OEBPS/aux.xhtml", "OEBPS/images/CON.png", "OEBPS/nul", "OEBPS/ok:colon.txt" })
+            {
+                using var w = new StreamWriter(z.CreateEntry(name).Open()); w.Write("x");
+            }
+        }), "devices");
+        Assert.Equal(3, book.Spine.Count);
+        Assert.False(File.Exists(Path.Combine(book.Folder, "OEBPS", "aux.xhtml")));
+        Assert.True(File.Exists(Path.Combine(book.Folder, "OEBPS", "images", "pic.png")));
+    }
+
+    [Fact]
+    public void Ids_with_quotes_cannot_break_out_of_their_attribute()
+    {
+        string html = Open(TestEpub.Create(ch1Extra: "<p id='a\"b' onclick='x'>odd</p><a href='#a\"b'>link</a>"), "quotes").BuildHtml();
+        Assert.Contains("id=\"c0_a&quot;b\"", html);
+        Assert.Contains("href=\"#c0_a&quot;b\"", html);
+    }
+
+    [Fact]
     public void Page_size_and_margins_come_after_the_books_own_styles()
     {
         string html = Open(TestEpub.Create(), "pagecss").BuildHtml();

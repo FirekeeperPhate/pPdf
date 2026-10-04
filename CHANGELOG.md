@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- EPUB: a book with one odd file inside (a name Windows refuses, a damaged picture) still opens; a picture listed as a page of its own is shown as one; two windows converting the same book at once no longer collide; a layout that takes more than ten minutes gives up with a message.
+
 ## 0.3.0
 
 - **EPUB books**: pPdf now opens `.epub` files. The book is unpacked and laid out into pages (5.5 x 8.5 in) by the Edge WebView2 engine already present in Windows, with a real outline from its headings and working internal and external links; the result is cached, so reopening is instant. Search, selection, highlights, notes, printing, night mode, position memory and *Save a copy* (as a PDF) all work on books. Scripts and online content in a book never run, DRM-protected books are refused with a clear message, scrambled embedded fonts are restored. "Open with" is registered for `.epub` too (never as the default).
