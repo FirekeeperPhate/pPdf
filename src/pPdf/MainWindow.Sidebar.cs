@@ -46,7 +46,27 @@ public partial class MainWindow
         var nodes = await Task.Run(pdf.LoadOutline);
         if (_pdf != pdf) return;
         OutlineTree.ItemsSource = nodes;
+
+        // the Outline is the tab people want first; a document without one shows its pages instead (not remembered as a choice)
+        if (!_settings.SidebarPages)
+        {
+            if (nodes.Count == 0 && OutlineTab.IsChecked == true) ShowSideTab(thumbs: true, automatic: true);
+            else if (nodes.Count > 0 && _autoPages) ShowSideTab(thumbs: false, automatic: true);
+        }
         OutlineEmpty.Visibility = nodes.Count == 0 && OutlineTab.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    bool _autoSwitch;
+    /// <summary>The Pages tab is showing only because this document has no outline.</summary>
+    bool _autoPages;
+
+    /// <summary>Switches tab; an automatic switch is not the user's choice, so it is not saved and is undone for the next document that has an outline.</summary>
+    void ShowSideTab(bool thumbs, bool automatic)
+    {
+        _autoSwitch = automatic;
+        try { (thumbs ? ThumbTab : OutlineTab).IsChecked = true; }
+        finally { _autoSwitch = false; }
+        _autoPages = automatic && thumbs;
     }
 
     void ClearSidebar()
@@ -94,7 +114,7 @@ public partial class MainWindow
         ThumbList.Visibility = thumbs ? Visibility.Visible : Visibility.Collapsed;
         OutlineTree.Visibility = thumbs ? Visibility.Collapsed : Visibility.Visible;
         OutlineEmpty.Visibility = !thumbs && _pdf != null && OutlineTree.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _settings.SidebarOutline = !thumbs;
+        if (!_autoSwitch) { _settings.SidebarPages = thumbs; _autoPages = false; }
         if (thumbs) RefreshThumbs();
     }
 

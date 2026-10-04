@@ -25,7 +25,8 @@ public sealed class AppSettings
     public bool CoverAlone { get; set; }
     public bool SidebarVisible { get; set; } = true;
     public double SidebarWidth { get; set; } = 210;
-    public bool SidebarOutline { get; set; }
+    /// <summary>The Pages tab (thumbnails) was the last one the user picked; false = the Outline, which is shown first.</summary>
+    public bool SidebarPages { get; set; }
     public bool MatchCase { get; set; }
     public bool WholeWord { get; set; }
 

@@ -17,6 +17,9 @@ public static class EpubConverter
     const int LayoutVersion = 2;
     const int MaxCachedBooks = 12;
 
+    /// <summary>Timing of the steps of a conversion (for measuring; null in normal use).</summary>
+    public static Action<string>? Trace { get; set; }
+
     public static bool IsEpub(string path) => string.Equals(Path.GetExtension(path), ".epub", StringComparison.OrdinalIgnoreCase);
 
     static string CacheFolder => Path.Combine(AppSettings.CacheFolder, "epub");
@@ -36,6 +39,8 @@ public static class EpubConverter
     /// </summary>
     public static async Task<string> ConvertAsync(string epubPath, IntPtr owner, IProgress<string>? progress = null)
     {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        void Mark(string step) => Trace?.Invoke($"{clock.ElapsedMilliseconds,6} ms  {step}");
         string pdfPath = CachePathFor(epubPath);
         if (File.Exists(pdfPath) && new FileInfo(pdfPath).Length > 0)
         {
@@ -54,35 +59,47 @@ public static class EpubConverter
 
         string work = Path.Combine(Path.GetTempPath(), "pPdf-epub-" + Guid.NewGuid().ToString("N")[..12]);
         Interlocked.Increment(ref _active);
+        Task<CoreWebView2Controller>? browser = null;
         try
         {
+            Mark("start");
             progress?.Report("Reading the book...");
+            // the browser takes about a second to start and the book about a second to unpack: do both at once
+            browser = StartBrowserAsync(owner, Mark);
             var book = await Task.Run(() =>
             {
                 Directory.CreateDirectory(work);
                 var b = EpubBook.Open(epubPath, work);
+                Mark("unpacked");
                 File.WriteAllText(Path.Combine(work, EpubBook.PageName), b.BuildHtml(), new UTF8Encoding(false));
                 return b;
             });
 
+            Mark("unpacked and joined");
             progress?.Report("Laying out the pages...");
             byte[] pdf;
-            try { pdf = await PrintAsync(work, owner); }
+            var starting = browser;
+            browser = null; // from here PrintAsync closes it
+            try { pdf = await PrintAsync(starting, work, Mark); }
             catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException or ArgumentException
                                            or WebView2RuntimeNotFoundException or System.ComponentModel.Win32Exception or JsonException or FormatException)
             {
                 throw new EpubException("The book could not be laid out: " + ex.Message);
             }
 
+            Mark("PDF received");
             Directory.CreateDirectory(CacheFolder);
             string tmp = pdfPath + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp"; // unique: two windows may convert the same book at once
             await File.WriteAllBytesAsync(tmp, pdf);
             File.Move(tmp, pdfPath, overwrite: true);
+            Mark("written");
             _ = book;
             return pdfPath;
         }
         finally
         {
+            // the book could not be unpacked: the browser that was starting for it is not needed
+            if (browser != null) _ = CloseWhenReadyAsync(browser);
             Interlocked.Decrement(ref _active);
             _ = Task.Run(() => TryDeleteFolder(work));
             // a conversion handles many megabytes in big arrays and strings: give that memory back now instead of keeping it for later
@@ -94,15 +111,29 @@ public static class EpubConverter
     /// <summary>Conversions running now: the housekeeping must not touch the browser's folder while one is.</summary>
     static int _active;
 
-    static async Task<byte[]> PrintAsync(string folder, IntPtr owner)
+    /// <summary>Starts the hidden browser (on the UI thread, which WebView2 requires).</summary>
+    static async Task<CoreWebView2Controller> StartBrowserAsync(IntPtr owner, Action<string> mark)
     {
         string userData = Path.Combine(AppSettings.CacheFolder, "webview");
         var env = await CoreWebView2Environment.CreateAsync(null, userData, new CoreWebView2EnvironmentOptions("--disable-gpu --disable-features=msSmartScreenProtection"));
         var controller = await env.CreateCoreWebView2ControllerAsync(owner);
+        controller.IsVisible = false;
+        controller.Bounds = new System.Drawing.Rectangle(0, 0, 900, 700);
+        mark("browser ready");
+        return controller;
+    }
+
+    static async Task CloseWhenReadyAsync(Task<CoreWebView2Controller> browser)
+    {
+        try { (await browser).Close(); }
+        catch (Exception) { /* it never started: nothing to close */ }
+    }
+
+    static async Task<byte[]> PrintAsync(Task<CoreWebView2Controller> browser, string folder, Action<string> mark)
+    {
+        var controller = await browser;
         try
         {
-            controller.IsVisible = false;
-            controller.Bounds = new System.Drawing.Rectangle(0, 0, 900, 700);
             var web = controller.CoreWebView2;
             web.Settings.IsScriptEnabled = false;          // a book is text and pictures: its scripts never run
             web.Settings.AreDefaultContextMenusEnabled = false;
@@ -126,12 +157,14 @@ public static class EpubConverter
             string args = """
                 {"printBackground":true,"preferCSSPageSize":true,"generateDocumentOutline":true,"displayHeaderFooter":false,"transferMode":"ReturnAsStream"}
                 """;
+            mark("page loaded");
             var printing = web.CallDevToolsProtocolMethodAsync("Page.printToPDF", args);
             if (await Task.WhenAny(printing, Task.Delay(TimeSpan.FromMinutes(10))) != printing)
                 throw new EpubException("The book took too long to lay out.");
             using var doc = JsonDocument.Parse(await printing);
             if (!doc.RootElement.TryGetProperty("stream", out var streamId))
                 throw new EpubException("The book could not be turned into pages.");
+            mark("pages laid out");
             return await ReadStreamAsync(web, streamId.GetString()!);
         }
         finally

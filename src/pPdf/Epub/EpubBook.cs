@@ -262,57 +262,23 @@ public sealed partial class EpubBook
     /// <summary>All the chapters in one HTML page: each starts on a new page, ids and links are renamed so they stay unique and keep working.</summary>
     public string BuildHtml()
     {
+        // the chapters do not depend on each other (the rename tables are read-only): process them on all cores, then join them in order
+        var parts = new ChapterParts[_spine.Count];
+        Parallel.For(0, _spine.Count, i => parts[i] = BuildChapter(_spine[i]));
+
         var styleLinks = new List<string>();
         var seenLinks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var styles = new List<string>();
         var seenStyles = new HashSet<string>();
         var bodies = new StringBuilder();
-
-        foreach (var chapter in _spine)
+        foreach (var p in parts)
         {
-            string dir = DirectoryOf(chapter.Path);
-            if (ImageExtensions.Contains(System.IO.Path.GetExtension(chapter.Path), StringComparer.OrdinalIgnoreCase))
-            {
-                // a picture listed in the spine (against the specification, but it happens: a cover): it is shown as a page of its own
-                bodies.Append($"<div id=\"c{chapter.Index}\" class=\"ppdf-chapter\"")
-                      .Append(chapter.Index > 0 ? " style=\"break-before: page\">" : ">")
-                      .Append($"<img src=\"{UrlOf(chapter.Path)}\" alt=\"\"></div>\n");
-                continue;
-            }
-            string text = ReadText(System.IO.Path.Combine(Folder, chapter.Path.Replace('/', System.IO.Path.DirectorySeparatorChar)));
-
-            string head = HeadRx().Match(text) is { Success: true } hm ? hm.Value : "";
-            foreach (Match m in LinkRx().Matches(head))
-            {
-                if (!StylesheetRelRx().IsMatch(m.Value)) continue;
-                var href = UrlAttrRx().Match(m.Value);
-                if (!href.Success || href.Groups[1].Value.ToLowerInvariant() != "href") continue;
-                string url = ResolveResource(dir, href.Groups[2].Success && href.Groups[2].Length > 0 ? href.Groups[2].Value : href.Groups[3].Value);
-                if (url.Length > 0 && seenLinks.Add(url)) styleLinks.Add($"<link rel=\"stylesheet\" href=\"{url}\">");
-            }
-            foreach (Match m in StyleRx().Matches(head)) if (seenStyles.Add(m.Value)) styles.Add(m.Value);
-
-            string attrs = "", inner;
-            if (BodyRx().Match(text) is { Success: true } bm) { attrs = bm.Groups[1].Value; inner = bm.Groups[2].Value; }
-            else inner = HeadRx().Replace(text, "");
-
-            inner = SelfClosingRx().Replace(inner, "<$1$2></$1>");
-            inner = IdAttrRx().Replace(inner, m => $"id=\"c{chapter.Index}_{Quote(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)}\"");
-            inner = AnchorRx().Replace(inner, a => NameAttrRx().Replace(a.Value, n =>
-                $"id=\"c{chapter.Index}_{Quote(n.Groups[1].Success ? n.Groups[1].Value : n.Groups[2].Value)}\""));
-            inner = UrlAttrRx().Replace(inner, m =>
-            {
-                string name = m.Groups[1].Value, value = m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
-                return $"{name}=\"{Rewrite(chapter, dir, name.ToLowerInvariant() == "src", value)}\"";
-            });
-
-            string cls = ClassAttrRx().Match(attrs) is { Success: true } cm ? (cm.Groups[1].Success ? cm.Groups[1].Value : cm.Groups[2].Value) : "";
-            bodies.Append($"<div id=\"c{chapter.Index}\" class=\"ppdf-chapter {System.Net.WebUtility.HtmlEncode(cls)}\"")
-                  .Append(chapter.Index > 0 ? " style=\"break-before: page\">" : ">")
-                  .Append(inner).Append("</div>\n");
+            foreach (string url in p.StyleUrls) if (seenLinks.Add(url)) styleLinks.Add($"<link rel=\"stylesheet\" href=\"{url}\">");
+            foreach (string s in p.Styles) if (seenStyles.Add(s)) styles.Add(s);
+            bodies.Append(p.Html);
         }
 
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(bodies.Length + 4096);
         sb.Append("<!DOCTYPE html>\n<html").Append(Language.Length > 0 ? $" lang=\"{System.Net.WebUtility.HtmlEncode(Language)}\"" : "").Append(">\n<head>\n<meta charset=\"utf-8\">\n");
         sb.Append("<title>").Append(System.Net.WebUtility.HtmlEncode(Title)).Append("</title>\n");
         sb.Append("<style>").Append(BaseCss).Append("</style>\n");
@@ -322,6 +288,53 @@ public sealed partial class EpubBook
         sb.Append("<style>").Append(PageCss).Append("</style>\n");
         sb.Append("</head>\n<body>\n").Append(bodies).Append("</body>\n</html>\n");
         return sb.ToString();
+    }
+
+    /// <summary>What one chapter contributes: the stylesheets it asks for, its own style blocks, and its content (wrapped in a div of its own).</summary>
+    readonly record struct ChapterParts(List<string> StyleUrls, List<string> Styles, string Html);
+
+    ChapterParts BuildChapter(Chapter chapter)
+    {
+        var urls = new List<string>();
+        var styles = new List<string>();
+        string dir = DirectoryOf(chapter.Path);
+        string open = $"<div id=\"c{chapter.Index}\" class=\"ppdf-chapter";
+        string pageBreak = chapter.Index > 0 ? " style=\"break-before: page\">" : ">";
+
+        if (ImageExtensions.Contains(System.IO.Path.GetExtension(chapter.Path), StringComparer.OrdinalIgnoreCase))
+        {
+            // a picture listed in the spine (against the specification, but it happens: a cover): it is shown as a page of its own
+            return new ChapterParts(urls, styles, open + "\"" + pageBreak + $"<img src=\"{UrlOf(chapter.Path)}\" alt=\"\"></div>\n");
+        }
+        string text = ReadText(System.IO.Path.Combine(Folder, chapter.Path.Replace('/', System.IO.Path.DirectorySeparatorChar)));
+
+        string head = HeadRx().Match(text) is { Success: true } hm ? hm.Value : "";
+        foreach (Match m in LinkRx().Matches(head))
+        {
+            if (!StylesheetRelRx().IsMatch(m.Value)) continue;
+            var href = UrlAttrRx().Match(m.Value);
+            if (!href.Success || href.Groups[1].Value.ToLowerInvariant() != "href") continue;
+            string url = ResolveResource(dir, href.Groups[2].Success && href.Groups[2].Length > 0 ? href.Groups[2].Value : href.Groups[3].Value);
+            if (url.Length > 0) urls.Add(url);
+        }
+        foreach (Match m in StyleRx().Matches(head)) styles.Add(m.Value);
+
+        string attrs = "", inner;
+        if (BodyRx().Match(text) is { Success: true } bm) { attrs = bm.Groups[1].Value; inner = bm.Groups[2].Value; }
+        else inner = HeadRx().Replace(text, "");
+
+        inner = SelfClosingRx().Replace(inner, "<$1$2></$1>");
+        inner = IdAttrRx().Replace(inner, m => $"id=\"c{chapter.Index}_{Quote(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)}\"");
+        inner = AnchorRx().Replace(inner, a => NameAttrRx().Replace(a.Value, n =>
+            $"id=\"c{chapter.Index}_{Quote(n.Groups[1].Success ? n.Groups[1].Value : n.Groups[2].Value)}\""));
+        inner = UrlAttrRx().Replace(inner, m =>
+        {
+            string name = m.Groups[1].Value, value = m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
+            return $"{name}=\"{Rewrite(chapter, dir, name.ToLowerInvariant() == "src", value)}\"";
+        });
+
+        string cls = ClassAttrRx().Match(attrs) is { Success: true } cm ? (cm.Groups[1].Success ? cm.Groups[1].Value : cm.Groups[2].Value) : "";
+        return new ChapterParts(urls, styles, open + " " + System.Net.WebUtility.HtmlEncode(cls) + "\"" + pageBreak + inner + "</div>\n");
     }
 
     /// <summary>An attribute value from the source, safe to put between double quotes (the source may have used single quotes around a double quote).</summary>

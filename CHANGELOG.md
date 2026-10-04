@@ -3,6 +3,8 @@
 ## Unreleased
 
 - EPUB: a book with one odd file inside (a name Windows refuses, a damaged picture) still opens; a picture listed as a page of its own is shown as one; two windows converting the same book at once no longer collide; a layout that takes more than ten minutes gives up with a message.
+- **Opening an EPUB is faster** (about 25 to 40 % on the first open of a book): the browser that lays the pages out starts while the book is being unpacked, and the chapters are prepared on all cores at once. Reopening a book was already instant.
+- **The side panel opens on the Outline**: the Outline tab now comes first and is selected. A document without an outline shows its pages instead (without changing your choice); once you pick a tab yourself, pPdf remembers it.
 
 ## 0.3.0
 

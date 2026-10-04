@@ -129,10 +129,10 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6">
-                    <RadioButton x:Name="ThumbTab" GroupName="side" Content="Pages" IsChecked="True" Style="{StaticResource {x:Type ToggleButton}}" Padding="14,4" Margin="2,0" Focusable="False" Checked="OnSideTabChanged" />
-                    <RadioButton x:Name="OutlineTab" GroupName="side" Content="Outline" Style="{StaticResource {x:Type ToggleButton}}" Padding="14,4" Margin="2,0" Focusable="False" Checked="OnSideTabChanged" />
+                    <RadioButton x:Name="OutlineTab" GroupName="side" Content="Outline" IsChecked="True" Style="{StaticResource {x:Type ToggleButton}}" Padding="14,4" Margin="2,0" Focusable="False" Checked="OnSideTabChanged" />
+                    <RadioButton x:Name="ThumbTab" GroupName="side" Content="Pages" Style="{StaticResource {x:Type ToggleButton}}" Padding="14,4" Margin="2,0" Focusable="False" Checked="OnSideTabChanged" />
                 </StackPanel>
-                <ListBox x:Name="ThumbList" Grid.Row="1" Background="Transparent" BorderThickness="0" SelectionChanged="OnThumbSelected"
+                <ListBox x:Name="ThumbList" Grid.Row="1" Visibility="Collapsed" Background="Transparent" BorderThickness="0" SelectionChanged="OnThumbSelected"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.ScrollUnit="Pixel">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
@@ -146,7 +146,7 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <TreeView x:Name="OutlineTree" Grid.Row="1" Visibility="Collapsed" Background="Transparent" BorderThickness="0"
+                <TreeView x:Name="OutlineTree" Grid.Row="1" Background="Transparent" BorderThickness="0"
                           SelectedItemChanged="OnOutlineSelected">
                     <TreeView.ItemContainerStyle>
                         <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">

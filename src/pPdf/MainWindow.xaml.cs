@@ -100,7 +100,7 @@ public partial class MainWindow : Window
         SidebarColumn.Width = new GridLength(_settings.SidebarVisible ? _settings.SidebarWidth : 0);
         SidebarSplitter.Visibility = _settings.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
         SidebarToggle.IsChecked = _settings.SidebarVisible;
-        (_settings.SidebarOutline ? OutlineTab : ThumbTab).IsChecked = true;
+        (_settings.SidebarPages ? ThumbTab : OutlineTab).IsChecked = true;
         MatchCaseToggle.IsChecked = _settings.MatchCase;
         WholeWordToggle.IsChecked = _settings.WholeWord;
     }
