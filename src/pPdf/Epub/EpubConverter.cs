@@ -85,6 +85,9 @@ public static class EpubConverter
         {
             Interlocked.Decrement(ref _active);
             _ = Task.Run(() => TryDeleteFolder(work));
+            // a conversion handles many megabytes in big arrays and strings: give that memory back now instead of keeping it for later
+            System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
         }
     }
 
