@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (not released yet)
+## 0.4.0
 
 - **Scanned documents become searchable (OCR)**: a document whose pages are only pictures is noticed when it opens, and Windows' own text recognition reads it (the bar that appears, or More > Recognize text of scanned pages), in the languages installed in Windows; a page takes a fraction of a second and can be stopped. Search, selection, copy and highlights then work on those pages, the text is kept for the next time the file is opened, and *Save a copy* writes it into the file as invisible text over the pictures, so other programs can search and copy it too. pPdf calls the recognizer directly: the installers do not grow.
 - **Organize pages** (More > Organize pages, Ctrl+Shift+O): turn pages, leave some out, move them earlier or later, insert the pages of other PDF files, then save the result, or only the selected pages, as a new file. Your annotations, form entries and bookmarks can be drawn in; the document's own outline and form stay with the pages that stay.
