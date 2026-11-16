@@ -546,14 +546,43 @@ public sealed partial class PdfViewer : Grid
         }
         if (!IsPaged)
         {
-            // continuous views: a glide, and a notch is a bit more than the default 48 px
+            // continuous views: a short glide; a notch is 120 px (at the default 3 lines), more when the wheel is spun fast
             e.Handled = true;
-            SmoothBy(-e.Delta / 120.0 * 96);
+            SmoothBy(-e.Delta / 120.0 * WheelStep * WheelBoost(e.Delta));
             return;
         }
 
         e.Handled = true;
-        ScrollBy(-e.Delta / 120.0 * 48, throttleFlips: true);
+        ScrollBy(-e.Delta / 120.0 * WheelStep * 0.8, throttleFlips: true);
+    }
+
+    /// <summary>DIPs per wheel notch, following the "lines to scroll" setting of Windows (3 = 120 px).</summary>
+    static double WheelStep
+    {
+        get
+        {
+            int lines = SystemParameters.WheelScrollLines;
+            return lines <= 0 ? 120 : Math.Clamp(lines, 1, 20) * 40;
+        }
+    }
+
+    long _lastNotchAt;
+    int _notchStreak, _notchSign;
+
+    /// <summary>
+    /// Speeds the wheel up while its notches come in quick succession (up to 3x), so a long document can be crossed with
+    /// a spin. Touchpads and smooth wheels send small deltas many times a second: they are left alone.
+    /// </summary>
+    double WheelBoost(int delta)
+    {
+        if (Math.Abs(delta) < 120) { _notchStreak = 0; return 1; }
+        long now = Environment.TickCount64;
+        int sign = Math.Sign(delta);
+        if (sign == _notchSign && now - _lastNotchAt < 120) _notchStreak++;
+        else _notchStreak = 0;
+        _lastNotchAt = now;
+        _notchSign = sign;
+        return 1 + Math.Min(_notchStreak, 8) * 0.25;
     }
 
 
@@ -561,6 +590,10 @@ public sealed partial class PdfViewer : Grid
 
     double _smoothTarget, _smoothLast;
     bool _smoothing;
+    TimeSpan _smoothFrameAt;
+
+    /// <summary>Time constant of the glide: about 0.15 s to arrive, whatever the refresh rate of the screen.</summary>
+    const double GlideTau = 0.03;
 
     /// <summary>Scrolls by <paramref name="delta"/> DIPs, easing towards the target over a few frames instead of jumping.</summary>
     void SmoothBy(double delta)
@@ -570,6 +603,7 @@ public sealed partial class PdfViewer : Grid
         {
             _smoothTarget = _smoothLast = _scroll.VerticalOffset;
             _smoothing = true;
+            _smoothFrameAt = TimeSpan.Zero;
             CompositionTarget.Rendering += OnSmoothFrame;
         }
         _smoothTarget = Math.Clamp(_smoothTarget + delta, 0, Math.Max(0, _scroll.ScrollableHeight));
@@ -587,7 +621,13 @@ public sealed partial class PdfViewer : Grid
             StopSmoothing();
             return;
         }
-        _smoothLast = current + diff * 0.3;
+        // the same glide at 60, 144 or 240 Hz: the step depends on the time since the last frame
+        var at = e is RenderingEventArgs r ? r.RenderingTime : TimeSpan.Zero;
+        if (at == _smoothFrameAt && at != TimeSpan.Zero) return;   // Rendering can fire twice for one frame
+        double dt = _smoothFrameAt == TimeSpan.Zero || at == TimeSpan.Zero ? 1 / 60.0 : Math.Clamp((at - _smoothFrameAt).TotalSeconds, 0.001, 0.1);
+        _smoothFrameAt = at;
+        double step = 1 - Math.Exp(-dt / GlideTau);
+        _smoothLast = Math.Abs(diff) < 2 ? _smoothTarget : current + diff * step;
         _scroll.ScrollToVerticalOffset(_smoothLast);
     }
 

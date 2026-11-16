@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3 (not released yet)
+
+- **Faster wheel scrolling**: a notch moves 120 px (following the Windows "lines to scroll" setting) instead of 96, up to three times as far when the wheel is spun fast, and the glide settles in about 0.15 s at any refresh rate. The one-page and two-page views move twice as far per notch. Touchpads are unchanged.
+
 ## 0.3.2
 
 - **Security (EPUB)**: a book can no longer name a file outside itself. A crafted book could have rewritten the start of one of your files, shown a local text file inside the book, or made Windows connect to a network share (sending your sign-in hash) just by being opened. Books that unpack into far more than they weigh are refused, and the hidden browser cannot even look up a server name.
