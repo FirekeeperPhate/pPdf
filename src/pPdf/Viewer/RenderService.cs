@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using pPdf.Pdf;
@@ -117,7 +118,7 @@ public sealed class RenderService : IDisposable
             {
                 if (job.Pdf.IsDisposed) { job.Tcs.TrySetResult(null); continue; }
                 var bmp = job.Pdf.Render(job.Key.Page, job.Key.FullW, job.Key.FullH, job.Key.Region, job.Key.Rotation, job.Key.Invert);
-                if (bmp != null) Store(job.Pdf, job.Key, bmp);
+                if (bmp != null) Store(job.Pdf, job.Key, bmp, job.Seq);
                 job.Tcs.TrySetResult(bmp);
             }
             catch (Exception ex)
@@ -127,11 +128,16 @@ public sealed class RenderService : IDisposable
         }
     }
 
-    void Store(PdfFile pdf, RenderKey key, BitmapSource bmp)
+    /// <summary>For each document, the last request number when it was forgotten: a render asked for before that and finishing after it is not kept.</summary>
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<PdfFile, StrongBox<long>> _forgottenAt = new();
+
+    void Store(PdfFile pdf, RenderKey key, BitmapSource bmp, long seq)
     {
         lock (_gate)
         {
             var id = (pdf, key);
+            // the document was closed (or changed) while this was being drawn: keeping it would hold the old pages, or the whole closed document, in memory
+            if (pdf.IsDisposed || (_forgottenAt.TryGetValue(pdf, out var at) && seq <= at.Value)) return;
             if (_cache.ContainsKey(id)) return;
             var node = _lru.AddFirst(new CacheEntry(id, bmp));
             _cache[id] = node;
@@ -151,6 +157,7 @@ public sealed class RenderService : IDisposable
     {
         lock (_gate)
         {
+            _forgottenAt.AddOrUpdate(pdf, new StrongBox<long>(_seq));
             foreach (var j in _queue.Where(j => j.Pdf == pdf).ToList()) { j.Tcs.TrySetCanceled(); _queue.Remove(j); }
             foreach (var kv in _cache.Where(kv => kv.Key.Item1 == pdf).ToList())
             {

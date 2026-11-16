@@ -36,7 +36,7 @@ public sealed class PdfFile : IDisposable
     /// <summary>Files bigger than this are read from disk when PDFium needs a part of them, instead of being held in memory.</summary>
     internal static long OnDemandThreshold = 64L << 20;
 
-    readonly byte[]? _data;
+    byte[]? _data; // released on Dispose: a closed document must not keep its file in memory
     // on-demand files: the open file, and the callback object PDFium keeps calling (both must outlive the document)
     readonly SafeFileHandle? _file;
     readonly FPDF_FILEACCESS? _access;
@@ -52,7 +52,7 @@ public sealed class PdfFile : IDisposable
     public bool IsOnDemand => _file != null;
 
     /// <summary>The bytes of the document (for saving a copy): the in-memory copy, or the file read again.</summary>
-    public byte[] GetBytes() => _data ?? File.ReadAllBytes(Path!);
+    public byte[] GetBytes() => _data ?? (Path != null ? File.ReadAllBytes(Path) : throw new ObjectDisposedException(nameof(PdfFile)));
 
     PdfFile(string? path, byte[]? data, SafeFileHandle? file, FPDF_FILEACCESS? access, PDFiumCore.Delegates.Func_int___IntPtr_uint_bytePtr_uint? getBlock,
         FpdfDocumentT doc, string? password)
@@ -118,7 +118,7 @@ public sealed class PdfFile : IDisposable
             doc = fpdfview.FPDF_LoadMemDocument64(ptr, (ulong)pinned.Length, password);
             if (doc == null) throw LoadError(password);
         }
-        return new PdfFile(path, pinned, null, null, null, doc, password);
+        return NotEmpty(new PdfFile(path, pinned, null, null, null, doc, password));
     }
 
     /// <summary>A big file is not loaded: PDFium asks for the blocks it needs (the xref, the pages on screen).</summary>
@@ -153,7 +153,15 @@ public sealed class PdfFile : IDisposable
                 throw error;
             }
         }
-        return new PdfFile(path, null, file, access, getBlock, doc, password);
+        return NotEmpty(new PdfFile(path, null, file, access, getBlock, doc, password));
+    }
+
+    /// <summary>A document without a single page (a broken page tree) has nothing to show: it is refused like a damaged file.</summary>
+    static PdfFile NotEmpty(PdfFile pdf)
+    {
+        if (pdf.PageCount > 0) return pdf;
+        pdf.Dispose();
+        throw new PdfException("The document has no pages.");
     }
 
     static PdfException LoadError(string? password)
@@ -176,6 +184,7 @@ public sealed class PdfFile : IDisposable
             if (_doc == null) return;
             fpdfview.FPDF_CloseDocument(_doc);
             _doc = null;
+            _data = null;
         }
         _file?.Dispose();
         GC.KeepAlive(_access);

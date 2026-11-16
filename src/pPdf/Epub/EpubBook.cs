@@ -22,7 +22,11 @@ public sealed partial class EpubBook
     /// <summary>Host name the unpacked folder is served under while the page is laid out.</summary>
     public const string Host = "ppdf.epub";
 
-    const long MaxUnpackedBytes = 2L << 30;
+    // limits against "zip bombs" (a small file that unpacks into gigabytes): real books stay far below them
+    const long MaxUnpackedBytes = 1L << 30;
+    const long MaxEntryBytes = 128L << 20;
+    const int MaxEntries = 20_000;
+    const long MaxRatio = 200;
 
     public sealed record Chapter(int Index, string Path);
 
@@ -44,9 +48,14 @@ public sealed partial class EpubBook
         try
         {
             using var zip = ZipFile.OpenRead(epubPath);
+            if (zip.Entries.Count > MaxEntries) throw new EpubException("This book has too many files inside to open.");
             long total = 0;
-            foreach (var entry in zip.Entries) total += entry.Length;
-            if (total > MaxUnpackedBytes) throw new EpubException("This book is too big to open.");
+            foreach (var entry in zip.Entries)
+            {
+                total += entry.Length;
+                bool suspicious = entry.Length > MaxEntryBytes || (entry.Length > (1 << 20) && entry.Length > entry.CompressedLength * MaxRatio);
+                if (suspicious || total > MaxUnpackedBytes) throw new EpubException("This book is too big to open.");
+            }
 
             string root = System.IO.Path.GetFullPath(folder) + System.IO.Path.DirectorySeparatorChar;
             foreach (var entry in zip.Entries)
@@ -85,10 +94,25 @@ public sealed partial class EpubBook
         return DeviceNames.Contains((dot < 0 ? part : part[..dot]).TrimEnd(' '));
     }
 
-    static string? FindFile(string folder, string relative)
+    /// <summary>The file at <paramref name="relative"/> inside the book, or null if there is none or the path would lead outside the book's folder.</summary>
+    static string? FindFile(string folder, string relative) => Inside(folder, relative) is { } p && File.Exists(p) ? p : null;
+
+    /// <summary>
+    /// The full path of <paramref name="relative"/> inside <paramref name="folder"/>, or null if it points anywhere else: a drive ("C:/..."),
+    /// a network share ("//server/..."), or above the folder. Every file a book names goes through here, so a book can never make pPdf read
+    /// or write a file of the user, or connect to a share.
+    /// </summary>
+    internal static string? Inside(string folder, string relative)
     {
-        string p = System.IO.Path.Combine(folder, relative.Replace('/', System.IO.Path.DirectorySeparatorChar));
-        return File.Exists(p) ? p : null;
+        string clean = Normalize(relative);
+        if (clean.Length == 0) return null;
+        try
+        {
+            string root = System.IO.Path.GetFullPath(folder).TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
+            string full = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, clean.Replace('/', System.IO.Path.DirectorySeparatorChar)));
+            return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? full : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
     }
 
     void ReadPackage()
@@ -101,7 +125,7 @@ public sealed partial class EpubBook
             opfPath = XDocument.Load(container).Descendants().FirstOrDefault(e => e.Name.LocalName == "rootfile")?.Attribute("full-path")?.Value;
         }
         catch (System.Xml.XmlException) { throw new EpubException("The book's container is damaged."); }
-        if (string.IsNullOrWhiteSpace(opfPath) || FindFile(Folder, Uri.UnescapeDataString(opfPath)) is not { } opfFile)
+        if (string.IsNullOrWhiteSpace(opfPath) || FindFile(Folder, Normalize(Uri.UnescapeDataString(opfPath))) is not { } opfFile)
             throw new EpubException("The book has no package file.");
 
         XDocument opf;
@@ -207,7 +231,8 @@ public sealed partial class EpubBook
         var parts = new List<string>();
         foreach (string part in path.Replace('\\', '/').Split('/'))
         {
-            if (part.Length == 0 || part == ".") continue;
+            // a part with a colon is a drive ("C:") or a stream ("file:stream"), never a file inside a book
+            if (part.Length == 0 || part == "." || part.Contains(':')) continue;
             if (part == "..") { if (parts.Count > 0) parts.RemoveAt(parts.Count - 1); continue; }
             parts.Add(part);
         }
@@ -224,6 +249,8 @@ public sealed partial class EpubBook
     private static partial Regex HeadRx();
     [GeneratedRegex(@"<link\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex LinkRx();
+    [GeneratedRegex(@"<meta\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex MetaRx();
     [GeneratedRegex(@"<style\b[^>]*>.*?</style\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex StyleRx();
     [GeneratedRegex(@"(?<![\w:-])(src|href|xlink:href)\s*=\s*(?:""([^""]*)""|'([^']*)')", RegexOptions.IgnoreCase)]
@@ -264,7 +291,13 @@ public sealed partial class EpubBook
     {
         // the chapters do not depend on each other (the rename tables are read-only): process them on all cores, then join them in order
         var parts = new ChapterParts[_spine.Count];
-        Parallel.For(0, _spine.Count, i => parts[i] = BuildChapter(_spine[i]));
+        try { Parallel.For(0, _spine.Count, i => parts[i] = BuildChapter(_spine[i])); }
+        catch (AggregateException ex)
+        {
+            // the first real error, so the message names it (a locked or unreadable chapter, not "one or more errors occurred")
+            var inner = ex.Flatten().InnerExceptions[0];
+            throw inner is EpubException ? inner : new EpubException("A chapter of the book could not be read: " + inner.Message);
+        }
 
         var styleLinks = new List<string>();
         var seenLinks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -306,7 +339,7 @@ public sealed partial class EpubBook
             // a picture listed in the spine (against the specification, but it happens: a cover): it is shown as a page of its own
             return new ChapterParts(urls, styles, open + "\"" + pageBreak + $"<img src=\"{UrlOf(chapter.Path)}\" alt=\"\"></div>\n");
         }
-        string text = ReadText(System.IO.Path.Combine(Folder, chapter.Path.Replace('/', System.IO.Path.DirectorySeparatorChar)));
+        string text = ReadText(Inside(Folder, chapter.Path) ?? throw new EpubException("The book names a file outside itself."));
 
         string head = HeadRx().Match(text) is { Success: true } hm ? hm.Value : "";
         foreach (Match m in LinkRx().Matches(head))
@@ -323,6 +356,9 @@ public sealed partial class EpubBook
         if (BodyRx().Match(text) is { Success: true } bm) { attrs = bm.Groups[1].Value; inner = bm.Groups[2].Value; }
         else inner = HeadRx().Replace(text, "");
 
+        // links and metas in a body (preconnect, prefetch, refresh) would make the browser reach out on its own; the stylesheets were taken from the head above
+        inner = LinkRx().Replace(inner, "");
+        inner = MetaRx().Replace(inner, "");
         inner = SelfClosingRx().Replace(inner, "<$1$2></$1>");
         inner = IdAttrRx().Replace(inner, m => $"id=\"c{chapter.Index}_{Quote(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)}\"");
         inner = AnchorRx().Replace(inner, a => NameAttrRx().Replace(a.Value, n =>

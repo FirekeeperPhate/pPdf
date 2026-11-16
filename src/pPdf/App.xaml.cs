@@ -7,19 +7,24 @@ namespace pPdf;
 public partial class App : Application
 {
     /// <summary>Tells the installer and the uninstaller that pPdf is running (AppMutex in pPdf.iss).</summary>
-    static Mutex? _runningMutex;
+    static Mutex? _runningMutex, _globalRunningMutex;
 
     AppSettings _settings = new();
 
     public App()
     {
         _runningMutex = new Mutex(false, "pPdf.Running");
+        // the same name for every session, so an installer started by another user (or in another session) sees this one running too
+        try { _globalRunningMutex = new Mutex(false, @"Global\pPdf.Running"); }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException) { }
     }
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         DispatcherUnhandledException += OnUnhandled;
+        // at logoff or shutdown the windows get no Closing event: their annotations and positions are written here
+        SessionEnding += (_, _) => { foreach (var w in Windows.OfType<MainWindow>().ToList()) w.FlushForSessionEnd(); };
         // UI test harnesses build their own window offscreen
         if (Environment.GetEnvironmentVariable("PPDF_NO_STARTUP") == "1") return;
 

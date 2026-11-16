@@ -268,7 +268,7 @@ public sealed partial class PdfViewer : Grid
     /// </summary>
     public void JumpToPage(int page)
     {
-        if (_pdf == null) return;
+        if (_pdf == null || _pdf.PageCount == 0) return;
         page = Math.Clamp(page, 0, _pdf.PageCount - 1);
         if (Math.Abs(page - _currentPage) > 1 && CapturePosition() is { } here)
         {
@@ -604,7 +604,7 @@ public sealed partial class PdfViewer : Grid
     /// </summary>
     void ScrollBy(double delta, bool throttleFlips = false)
     {
-        if (_result == null) return;
+        if (_result == null || _rows.Count == 0) return;
         if (!IsPaged) { StopSmoothing(); _scroll.ScrollToVerticalOffset(_scroll.VerticalOffset + delta); return; }
 
         int row = PageLayoutEngine.RowOfPage(_rows, _currentPage);
@@ -635,7 +635,7 @@ public sealed partial class PdfViewer : Grid
     /// <summary>After the scroll bar was dragged the view may straddle two pages: settle on the one that shows most.</summary>
     void SnapToRow()
     {
-        if (_pdf == null || _result == null || !IsPaged) return;
+        if (_pdf == null || _result == null || !IsPaged || _rows.Count == 0) return;
         if (Mouse.LeftButton == MouseButtonState.Pressed) { _snapTimer.Start(); return; } // still dragging
         var (min, max) = RowScrollRange(PageLayoutEngine.RowOfPage(_rows, _currentPage));
         double offset = _scroll.VerticalOffset;
@@ -649,6 +649,7 @@ public sealed partial class PdfViewer : Grid
     {
         if (!_slots.Remove(page, out var slot)) return;
         slot.CancelRender();
+        ModelLink.UnlinkAll(slot);
         _canvas.Children.Remove(slot);
     }
 
@@ -664,11 +665,15 @@ public sealed partial class PdfViewer : Grid
         var wanted = new List<int>();
         double bestArea = -1;
         int bestPage = _currentPage;
+        // pages side by side are centred on each other: a short page can start lower than its taller neighbour, so the loop stops only
+        // when a whole row's worth of pages starts below the zone
+        int perRow = _rows.Count > 0 ? _rows.Max(row => row.Length) : 1, below = 0;
         for (int p = 0; p < _pdf.PageCount; p++)
         {
             var r = _result.PageRects[p];
             if (r.IsEmpty) continue;
-            if (r.Top > near.Bottom) break;
+            if (r.Top > near.Bottom) { if (++below >= perRow) break; continue; }
+            below = 0;
             if (r.Bottom < near.Top || r.Right < near.Left || r.Left > near.Right) continue;
             wanted.Add(p);
             var inter = Rect.Intersect(r, view);

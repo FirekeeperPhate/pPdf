@@ -159,4 +159,62 @@ public class EpubTests : IDisposable
     [InlineData("a\\b", "a/b")]
     public void Paths_are_normalised_and_never_leave_the_book(string input, string expected)
         => Assert.Equal(expected, EpubBook.Normalize(input));
+
+    [Theory]
+    [InlineData("C:/Users/me/thesis.docx")]
+    [InlineData("C:\\Windows\\win.ini")]
+    [InlineData("//server/share/p.opf")]
+    [InlineData("\\\\server\\share\\p.opf")]
+    [InlineData("../../../outside.txt")]
+    public void A_name_from_the_book_never_points_outside_its_folder(string name)
+    {
+        string? full = EpubBook.Inside(_dir, name);
+        if (full != null) Assert.StartsWith(Path.GetFullPath(_dir) + Path.DirectorySeparatorChar, full, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_scrambled_font_pointing_at_a_file_of_the_user_leaves_that_file_alone()
+    {
+        string victim = Path.Combine(_dir, "victim.txt");
+        File.WriteAllText(victim, new string('x', 2000));
+        string uri = victim.Replace('\\', '/');
+        string fonts = $"""<encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#"><enc:EncryptedData><enc:EncryptionMethod Algorithm="http://www.idpf.org/2008/embedding"/><enc:CipherData><enc:CipherReference URI="{uri}"/></enc:CipherData></enc:EncryptedData></encryption>""";
+        Open(TestEpub.Create(z => { using var w = new StreamWriter(z.CreateEntry("META-INF/encryption.xml").Open()); w.Write(fonts); }), "attack");
+        Assert.Equal(new string('x', 2000), File.ReadAllText(victim));
+    }
+
+    [Fact]
+    public void A_package_path_to_a_network_share_is_not_followed()
+    {
+        using var ms = new MemoryStream();
+        ms.Write(TestEpub.Create());
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Update, true))
+        {
+            zip.GetEntry("META-INF/container.xml")!.Delete();
+            using var w = new StreamWriter(zip.CreateEntry("META-INF/container.xml").Open());
+            w.Write("""<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="//127.0.0.1/c$/x.opf"/></rootfiles></container>""");
+        }
+        Assert.Throws<EpubException>(() => Open(ms.ToArray(), "share"));
+    }
+
+    [Fact]
+    public void Links_and_metas_inside_a_chapter_body_are_dropped()
+    {
+        string html = Open(TestEpub.Create(ch1Extra: "<link rel=\"preconnect\" href=\"https://tracker.example\"/><meta http-equiv=\"refresh\" content=\"0;url=https://x.example\"/>"), "links").BuildHtml();
+        Assert.DoesNotContain("tracker.example", html);
+        Assert.DoesNotContain("x.example", html);
+    }
+
+    [Fact]
+    public void A_zip_bomb_is_refused()
+    {
+        var epub = TestEpub.Create(z =>
+        {
+            using var s = z.CreateEntry("OEBPS/big.bin", CompressionLevel.Optimal).Open();
+            var zeros = new byte[1 << 20];
+            for (int i = 0; i < 8; i++) s.Write(zeros); // 8 MB of zeros: a few KB compressed
+        });
+        var ex = Assert.Throws<EpubException>(() => Open(epub, "bomb"));
+        Assert.Contains("too big", ex.Message);
+    }
 }

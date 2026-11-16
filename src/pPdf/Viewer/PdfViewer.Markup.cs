@@ -14,15 +14,16 @@ public sealed partial class PdfViewer
     public Color MarkupColor { get; set; } = Color.FromRgb(0xFF, 0xEB, 0x3B);
 
     /// <summary>Marks the selected text (it may span several lines and pages) and clears the selection. False if nothing is selected.</summary>
-    public bool AddMarkupFromSelection(MarkupKind kind, Color color)
+    public async Task<bool> AddMarkupFromSelectionAsync(MarkupKind kind, Color color)
     {
         if (_pdf == null || SelectionRange() is not { } range) return false;
+        // pages in the middle of a long selection may not have their boxes yet: they are read in the background
+        var texts = await TextsForRangeAsync(range.Lo.Page, range.Hi.Page, true);
+        if (texts == null) return false;
         var group = new List<Annotation>();
         for (int p = range.Lo.Page; p <= range.Hi.Page; p++)
         {
-            // pages in the middle of a long selection may not have their boxes yet
-            var text = DataFor(p)?.Text ?? _pdf.LoadText(p, true);
-            if (text is not { HasBoxes: true }) continue;
+            if (!texts.TryGetValue(p, out var text) || !text.HasBoxes) continue;
             int len = text.Text.Length;
             int s = p == range.Lo.Page ? Math.Min(range.Lo.Caret, len) : 0;
             int e = p == range.Hi.Page ? Math.Min(range.Hi.Caret, len) : len;

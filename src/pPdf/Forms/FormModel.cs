@@ -39,6 +39,21 @@ public sealed partial class FormField : ObservableObject
     [ObservableProperty] public partial string Value { get; set; } = "";
 
     public bool IsChanged => !string.Equals(Value, OriginalValue, StringComparison.Ordinal);
+
+    /// <summary>Whether a check box or radio button <paramref name="widget"/> of this field shows as on.</summary>
+    public bool IsOn(FormWidget widget) => IsOn(Kind, Value, widget.OnState, Widgets.Select(w => w.OnState));
+
+    /// <summary>
+    /// A radio button is on when the value is its own state. So is a check box, with one exception kept for odd forms: a value that is
+    /// not Off and matches none of the field's states turns every box on. Boxes of one name with states of their own ("Yes" / "No")
+    /// are then separate choices, as in Acrobat, not one box drawn in several places.
+    /// </summary>
+    public static bool IsOn(FormFieldKind kind, string value, string onState, IEnumerable<string> allStates)
+    {
+        if (string.IsNullOrEmpty(value) || string.Equals(value, "Off", StringComparison.OrdinalIgnoreCase)) return false;
+        if (string.Equals(value, onState, StringComparison.Ordinal)) return true;
+        return kind == FormFieldKind.CheckBox && !allStates.Contains(value, StringComparer.Ordinal);
+    }
 }
 
 /// <summary>The fillable fields of one document.</summary>

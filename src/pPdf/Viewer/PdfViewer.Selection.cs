@@ -108,7 +108,6 @@ public sealed partial class PdfViewer
                 return text == null ? null : new PageData(text, pdf.LoadLinks(page));
             }, ct);
             if (data == null || ct.IsCancellationRequested || _pdf != pdf) return;
-            _textLoading.Remove(page);
             _texts[page] = data;
             TrimTextCache();
             if (_slots.TryGetValue(page, out var slot)) RefreshOverlays(slot);
@@ -117,6 +116,11 @@ public sealed partial class PdfViewer
         catch (Exception ex)
         {
             Debug.WriteLine("text load failed: " + ex.Message);
+        }
+        finally
+        {
+            // done, failed or given up: the next time the page shows up it is tried again (and nobody waits for it meanwhile)
+            if (_pdf == pdf && !ct.IsCancellationRequested) _textLoading.Remove(page);
         }
     }
 
@@ -131,12 +135,14 @@ public sealed partial class PdfViewer
     /// <summary>Fetches the text of a page and waits for it (used for jumping to a search hit).</summary>
     public async Task<PageText?> GetPageTextAsync(int page)
     {
-        if (_pdf == null) return null;
+        var pdf = _pdf;
+        if (pdf == null || page < 0 || page >= pdf.PageCount) return null;
         if (_texts.TryGetValue(page, out var d)) return d.Text;
         EnsureText(page);
-        for (int i = 0; i < 400 && _pdf != null; i++)
+        for (int i = 0; i < 400 && _pdf == pdf; i++)
         {
             if (_texts.TryGetValue(page, out d)) return d.Text;
+            if (!_textLoading.Contains(page)) return null; // the page could not be read
             await Task.Delay(15);
         }
         return null;
@@ -194,15 +200,62 @@ public sealed partial class PdfViewer
         RefreshSelectionAll();
     }
 
-    /// <summary>The selected text, pages separated by blank lines.</summary>
-    public string GetSelectedText()
+    /// <summary>
+    /// The text of pages <paramref name="lo"/> to <paramref name="hi"/>: what is already loaded, plus the rest read in the background
+    /// (the window never waits on the document, which may be busy rendering). Null if another document was opened meanwhile.
+    /// </summary>
+    async Task<Dictionary<int, PageText>?> TextsForRangeAsync(int lo, int hi, bool boxes)
+    {
+        var pdf = _pdf;
+        if (pdf == null) return null;
+        var result = new Dictionary<int, PageText>();
+        var missing = new List<int>();
+        for (int p = lo; p <= hi; p++)
+        {
+            if (DataFor(p)?.Text is { } t && (!boxes || t.HasBoxes)) result[p] = t;
+            else missing.Add(p);
+        }
+        if (missing.Count == 0) return result;
+        bool long_ = missing.Count > 10;
+        if (long_) Mouse.OverrideCursor = Cursors.Wait;
+        try
+        {
+            var loaded = await Task.Run(() => missing.Select(p => (Page: p, Text: pdf.IsDisposed ? null : pdf.LoadText(p, boxes))).ToList());
+            if (_pdf != pdf) return null;
+            foreach (var (p, t) in loaded) if (t != null) result[p] = t;
+            return result;
+        }
+        finally { if (long_) Mouse.OverrideCursor = null; }
+    }
+
+    /// <summary>The selected text if every page of it is already loaded (no waiting), else empty.</summary>
+    public string GetSelectedTextIfLoaded()
     {
         if (_pdf == null || SelectionRange() is not { } range) return "";
+        var texts = new Dictionary<int, PageText>();
+        for (int p = range.Lo.Page; p <= range.Hi.Page; p++)
+        {
+            if (DataFor(p)?.Text is not { } t) return "";
+            texts[p] = t;
+        }
+        return JoinSelection(range, texts);
+    }
+
+    /// <summary>The selected text, pages separated by blank lines.</summary>
+    public async Task<string> GetSelectedTextAsync()
+    {
+        if (_pdf == null || SelectionRange() is not { } range) return "";
+        var texts = await TextsForRangeAsync(range.Lo.Page, range.Hi.Page, false);
+        // the selection may have changed while the pages were read: the text is the one asked for
+        return texts == null ? "" : JoinSelection(range, texts);
+    }
+
+    static string JoinSelection((TextPos Lo, TextPos Hi) range, Dictionary<int, PageText> texts)
+    {
         var sb = new StringBuilder();
         for (int p = range.Lo.Page; p <= range.Hi.Page; p++)
         {
-            var text = DataFor(p)?.Text ?? _pdf.LoadText(p, false);
-            if (text == null) continue;
+            if (!texts.TryGetValue(p, out var text)) continue;
             int len = text.Text.Length;
             int s = p == range.Lo.Page ? Math.Min(range.Lo.Caret, len) : 0;
             int e = p == range.Hi.Page ? Math.Min(range.Hi.Caret, len) : len;
@@ -213,9 +266,9 @@ public sealed partial class PdfViewer
         return sb.ToString();
     }
 
-    public bool CopySelection()
+    public async Task<bool> CopySelectionAsync()
     {
-        string text = GetSelectedText();
+        string text = await GetSelectedTextAsync();
         if (text.Length == 0) return false;
         try { Clipboard.SetDataObject(text, true); return true; }
         catch (System.Runtime.InteropServices.COMException) { return false; }
@@ -261,10 +314,13 @@ public sealed partial class PdfViewer
     /// <summary>Brings a search hit into view (switching page in the one-page layouts).</summary>
     public async Task ShowMatchAsync(TextMatch match)
     {
-        if (_pdf == null) return;
+        var pdf = _pdf;
+        if (pdf == null || match.Page < 0 || match.Page >= pdf.PageCount) return;
         var data = await GetPageTextAsync(match.Page);
+        // another document was opened while the page was read: the hit belongs to the old one
+        if (_pdf != pdf || _result == null) return;
         GoToPageIfNotVisible(match.Page);
-        if (data == null || _result == null || _pdf == null) return;
+        if (data == null) return;
         var rects = data.RectsForRange(match.Start, match.End);
         if (rects.Count == 0) return;
         // the slot may have been created by GoToPage just now
@@ -550,7 +606,7 @@ public sealed partial class PdfViewer
         switch (e.Key)
         {
             case Key.C when ctrl:
-                if (CopySelection()) e.Handled = true;
+                if (HasSelection) { e.Handled = true; _ = CopySelectionAsync(); }
                 return;
             case Key.A when ctrl:
                 SelectAll();

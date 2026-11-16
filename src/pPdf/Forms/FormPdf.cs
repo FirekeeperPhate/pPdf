@@ -216,7 +216,11 @@ public static class FormPdf
     {
         if (values.Count == 0) return;
         PdfDictionary? fontResource = null;
-        foreach (var w in Walk(doc))
+        bool lossy = false;
+        var widgets = Walk(doc).ToList();
+        // the "on" states of all the widgets of each name: boxes of one name with states of their own are separate choices
+        var states = widgets.GroupBy(w => w.Name).ToDictionary(g => g.Key, g => g.Select(w => OnStateOf(w.Dict)).ToList(), StringComparer.Ordinal);
+        foreach (var w in widgets)
         {
             if (!values.TryGetValue(w.Name, out string? value)) continue;
             try
@@ -229,7 +233,7 @@ public static class FormPdf
                     {
                         string on = OnStateOf(w.Dict);
                         bool off = value.Length == 0 || string.Equals(value, "Off", StringComparison.OrdinalIgnoreCase);
-                        bool selected = !off && (kind == FormFieldKind.CheckBox || string.Equals(value, on, StringComparison.Ordinal));
+                        bool selected = FormField.IsOn(kind.Value, value, on, states[w.Name]);
                         w.Field.Elements.SetName("/V", "/" + (off ? "Off" : value));
                         w.Dict.Elements.SetName("/AS", "/" + (selected ? on : "Off"));
                         break;
@@ -245,7 +249,7 @@ public static class FormPdf
                             foreach (var (export, label) in OptionsOf(Inherit(w.Dict, "/Opt")))
                                 if (export == value) { shown = label; break; }
                         fontResource ??= CreateFont(doc);
-                        SetTextAppearance(doc, w, shown, fontResource, kind.Value, w.Dict.Elements.GetRectangle("/Rect"));
+                        lossy |= SetTextAppearance(doc, w, shown, fontResource, kind.Value, w.Dict.Elements.GetRectangle("/Rect"));
                         break;
                     }
                 }
@@ -255,6 +259,10 @@ public static class FormPdf
                 // one odd widget must not lose the values of all the others
             }
         }
+        // text the plain Helvetica appearance could not hold (Greek, Cyrillic, Polish...): viewers are asked to draw the fields
+        // themselves from the values, which are stored in full
+        if (lossy && doc.Internals.Catalog.Elements.GetDictionary("/AcroForm") is { } acroForm)
+            acroForm.Elements.SetBoolean("/NeedAppearances", true);
     }
 
     static PdfDictionary CreateFont(PdfDocument doc)
@@ -268,11 +276,18 @@ public static class FormPdf
         return font;
     }
 
-    /// <summary>A plain appearance (Helvetica) so any viewer shows the text, even one that does not regenerate appearances.</summary>
-    static void SetTextAppearance(PdfDocument doc, Widget w, string text, PdfDictionary font, FormFieldKind kind, PdfRectangle rect)
+    /// <summary>
+    /// A plain appearance (Helvetica) so any viewer shows the text, even one that does not regenerate appearances.
+    /// True if some characters could not be written in it (they show as "?" there).
+    /// </summary>
+    static bool SetTextAppearance(PdfDocument doc, Widget w, string text, PdfDictionary font, FormFieldKind kind, PdfRectangle rect)
     {
         double width = Math.Abs(rect.X2 - rect.X1), height = Math.Abs(rect.Y2 - rect.Y1);
-        if (width < 1 || height < 1) return;
+        if (width < 1 || height < 1) return false;
+        // a field on a turned page is usually turned with it (/MK /R): its text is laid out along the field's own width
+        int turn = ((Int(w.Dict.Elements.GetDictionary("/MK")?.Elements["/R"]) % 360) + 360) % 360;
+        if (turn is 90 or 270) (width, height) = (height, width);
+        bool lossy = false;
 
         bool multiline = kind == FormFieldKind.Text && (w.Flags & MultilineFlag) != 0;
         double size = FontSizeOf(Text(Inherit(w.Dict, "/DA")));
@@ -289,7 +304,7 @@ public static class FormPdf
         {
             double textWidth = line.Length * size * 0.5; // a rough Helvetica width: enough to place centered / right-aligned text
             double x = align == 1 ? Math.Max(2, (width - textWidth) / 2) : align == 2 ? Math.Max(2, width - textWidth - 2) : 2;
-            sb.Append(Num(x - previousX)).Append(' ').Append(Num(y - previousY)).Append(" Td (").Append(Escape(line)).Append(") Tj\n");
+            sb.Append(Num(x - previousX)).Append(' ').Append(Num(y - previousY)).Append(" Td (").Append(Escape(line, ref lossy)).Append(") Tj\n");
             previousX = x; previousY = y;
             y -= lineHeight;
         }
@@ -304,6 +319,16 @@ public static class FormPdf
         form.Elements.SetName("/Type", "/XObject");
         form.Elements.SetName("/Subtype", "/Form");
         form.Elements.SetRectangle("/BBox", new PdfRectangle(new PdfSharp.Drawing.XRect(0, 0, width, height)));
+        if (turn != 0)
+        {
+            // turns the box back onto the field (a viewer fits the turned box to /Rect, so no offset is needed)
+            var matrix = new PdfArray(doc);
+            int[] m = turn switch { 90 => [0, 1, -1, 0], 180 => [-1, 0, 0, -1], _ => [0, -1, 1, 0] };
+            foreach (int v in m) matrix.Elements.Add(new PdfInteger(v));
+            matrix.Elements.Add(new PdfInteger(0));
+            matrix.Elements.Add(new PdfInteger(0));
+            form.Elements.SetValue("/Matrix", matrix);
+        }
         form.Elements.SetValue("/Resources", resources);
         form.CreateStream(Encoding.ASCII.GetBytes(sb.ToString()));
         doc.Internals.AddObject(form);
@@ -311,27 +336,41 @@ public static class FormPdf
         var ap = new PdfDictionary(doc);
         ap.Elements.SetReference("/N", form);
         w.Dict.Elements.SetValue("/AP", ap);
+        return lossy;
     }
 
     static string Num(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
-    /// <summary>A PDF string literal in WinAnsi: what that code page cannot hold becomes "?".</summary>
-    static string Escape(string s)
+    /// <summary>Windows-1252, which is what WinAnsiEncoding is: "?" for anything it cannot hold.</summary>
+    static readonly Encoding WinAnsi = CreateWinAnsi();
+
+    static Encoding CreateWinAnsi()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(1252, new EncoderReplacementFallback("?"), DecoderFallback.ReplacementFallback);
+    }
+
+    /// <summary>A PDF string literal in WinAnsi; <paramref name="lossy"/> is set when a character could not be written.</summary>
+    static string Escape(string s, ref bool lossy)
     {
         var sb = new StringBuilder(s.Length + 8);
+        var one = new char[1];
         foreach (char c in s)
         {
-            byte b = c < 256 ? (byte)c : WinAnsi(c);
+            byte b;
+            one[0] = c;
+            // 0x80-0x9F are control characters in Unicode but other letters in WinAnsi: they cannot be passed through as they are
+            if (c < 128) b = (byte)c;
+            else
+            {
+                var bytes = WinAnsi.GetBytes(one);
+                b = bytes.Length == 1 ? bytes[0] : (byte)'?';
+                if (b == '?' || (c >= 0x80 && c <= 0x9F)) { lossy = true; b = (byte)'?'; }
+            }
             if (b == '(' || b == ')' || b == '\\') sb.Append('\\');
             if (b < 32 || b > 126) sb.Append('\\').Append(Convert.ToString(b, 8).PadLeft(3, '0'));
             else sb.Append((char)b);
         }
         return sb.ToString();
     }
-
-    static byte WinAnsi(char c) => c switch
-    {
-        '€' => 0x80, '‘' => 0x91, '’' => 0x92, '“' => 0x93, '”' => 0x94, '–' => 0x96, '—' => 0x97,
-        _ => (byte)'?',
-    };
 }

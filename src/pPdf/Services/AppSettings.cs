@@ -93,14 +93,40 @@ public sealed class AppSettings
 
     public void Save()
     {
+        // normally one pPdf process holds the settings, but a second one can start (the first one did not answer in time): both write
+        // here, so each keeps the recent files and positions the other added instead of the last one wiping them out
+        Mutex? mutex = null;
+        bool owned = false;
         try
         {
+            mutex = new Mutex(false, @"Local\pPdf.Settings." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Folder.ToLowerInvariant())))[..12]);
+            try { owned = mutex.WaitOne(TimeSpan.FromSeconds(2)); } catch (AbandonedMutexException) { owned = true; }
+
             Directory.CreateDirectory(Folder);
-            string tmp = FilePath + ".tmp";
+            if (File.Exists(FilePath))
+            {
+                try
+                {
+                    if (JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), Json) is { } disk)
+                    {
+                        foreach (string r in disk.Recent)
+                            if (!Recent.Contains(r, StringComparer.OrdinalIgnoreCase) && Recent.Count < 12) Recent.Add(r);
+                        foreach (var p in disk.Positions)
+                            if (!Positions.Any(q => string.Equals(q.Path, p.Path, StringComparison.OrdinalIgnoreCase)) && Positions.Count < MaxPositions) Positions.Add(p);
+                    }
+                }
+                catch (JsonException) { }
+            }
+            string tmp = FilePath + "." + Environment.ProcessId + ".tmp"; // a name of its own: two processes never write the same temporary file
             File.WriteAllText(tmp, JsonSerializer.Serialize(this, Json));
             File.Move(tmp, FilePath, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        finally
+        {
+            if (owned) mutex!.ReleaseMutex();
+            mutex?.Dispose();
+        }
     }
 
     public void AddRecent(string path)

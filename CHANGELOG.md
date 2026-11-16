@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2 (not released yet)
+
+- **Security (EPUB)**: a book can no longer name a file outside itself. A crafted book could have rewritten the start of one of your files, shown a local text file inside the book, or made Windows connect to a network share (sending your sign-in hash) just by being opened. Books that unpack into far more than they weigh are refused, and the hidden browser cannot even look up a server name.
+- **Annotations are safer**: a save that fails (full disk, antivirus) is tried again instead of being forgotten; logging off or shutting Windows down with pPdf open now keeps the last changes; a damaged or locked store is never written over (a damaged one is kept aside); pictures half written by a crash are written again; annotations on pages a file no longer has are kept; opening a document counts as using it, so the housekeeping no longer forgets annotations of documents you open often (and waits three years, not one).
+- **A file that changed is noticed**: when the file at that path was replaced (a new download with the same name, a scanner's daily file) or a book was laid out again, pPdf asks before showing the annotations and form entries made on the old one.
+- **Save a copy** writes beside the target and then replaces it, so a full disk or a dropped network share never leaves half a file; the window cannot be closed while it writes; saving over another file forgets the annotations kept for that file.
+- Copying a long selection (Ctrl+A, Ctrl+C) and highlighting it no longer freeze the window; a page that failed to draw or to read its text is tried again; a search jump no longer lands in a document opened meanwhile; in the two-page views a page beside a shorter one shows up as soon as it is on screen; documents with no pages are refused cleanly; closed documents no longer stay in memory through the page cache.
+- Forms: check boxes of one name with states of their own ("Yes" / "No") are separate choices, on screen, printed and in the saved copy; text in a field on a turned page is upright in the saved copy; punctuation such as … • ™ is kept, and text WinAnsi cannot hold (Polish, Greek, Cyrillic) asks other viewers to draw the field themselves instead of showing "?".
+- Updates are offered only with a checksum to verify the download; the same user signed in twice (console and remote desktop) gets a pPdf in each session; the installer sees pPdf running in another session; two pPdf processes no longer wipe each other's recent files and positions.
+
 ## 0.3.1
 
 - EPUB: a book with one odd file inside (a name Windows refuses, a damaged picture) still opens; a picture listed as a page of its own is shown as one; two windows converting the same book at once no longer collide; a layout that takes more than ten minutes gives up with a message.

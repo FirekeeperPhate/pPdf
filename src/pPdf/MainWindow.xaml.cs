@@ -205,6 +205,8 @@ public partial class MainWindow : Window
 
     void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // a copy being written: closing now would leave half a file
+        if (_saving) { e.Cancel = true; return; }
         // the annotations are kept for the next time: nothing to ask
         Viewer.CommitEdits();
         FlushAnnotations();
@@ -213,8 +215,13 @@ public partial class MainWindow : Window
         _keepTimer.Stop();
         SaveSettings();
         Viewer.Close();
-        _pdf?.Dispose();
+        // a render in flight holds the document's lock: the window does not wait for it
+        if (_pdf is { } old) Task.Run(old.Dispose);
+        _pdf = null;
     }
+
+    /// <summary>"Save a copy" is writing the file.</summary>
+    bool _saving;
 
     /// <summary>
     /// Before leaving a document: whatever is being typed is committed and the annotations are written to their place in %AppData%
@@ -270,6 +277,7 @@ public partial class MainWindow : Window
 
         SetBusy(true, "Opening " + Path.GetFileName(path) + "...");
         PdfFile? pdf = null;
+        string? fingerprint = null;
         try
         {
             // a book is turned into a PDF first (kept, so the next time it opens at once); everything below then treats it as one
@@ -292,8 +300,11 @@ public partial class MainWindow : Window
                     SetBusy(true, "Opening " + Path.GetFileName(path) + "...");
                 }
             }
+            // what the kept annotations are checked against (for a book: the laid out pages, which change when it is laid out again)
+            fingerprint = await Task.Run(() => AnnotationPersistence.FingerprintOf(openPath));
         }
-        catch (Exception ex) when (ex is PdfException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is PdfException or IOException or UnauthorizedAccessException
+                                   || (Epub.EpubConverter.IsEpub(path) && ex is OutOfMemoryException or InvalidOperationException or ArgumentException or NotSupportedException))
         {
             SetBusy(false);
             MessageBox.Show(this, $"{Path.GetFileName(path)} could not be opened.\n\n{ex.Message}", "pPdf", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -307,7 +318,7 @@ public partial class MainWindow : Window
         _keepSuspended = true; // opening empties and refills the store: not a change made by the user
         Viewer.Open(pdf, _settings.FindPosition(path));
         _keepSuspended = false;
-        RestoreKeptAnnotations(path, pdf);
+        RestoreKeptAnnotations(path, pdf, fingerprint);
         _ = LoadFormAsync(pdf);
         WelcomePanel.Visibility = Visibility.Collapsed;
         _settings.AddRecent(path);
@@ -664,13 +675,26 @@ public partial class MainWindow : Window
         var formValues = Viewer.Form?.ChangedValues() ?? [];
         bool overwroteOpenFile = false;
         SetBusy(true, "Saving...");
+        _saving = true;
+        string target = dlg.FileName;
+        string tmp = target + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
         try
         {
             byte[] bytes = await Task.Run(() => anns.Count == 0 && formValues.Count == 0 ? pdf.GetBytes() : PdfAnnotationWriter.Apply(pdf.GetBytes(), pdf.Password, anns, formValues));
-            await File.WriteAllBytesAsync(dlg.FileName, bytes);
+            // written beside it first, then put in its place: a full disk or a dropped network share never leaves half a file where the old one was
+            await File.WriteAllBytesAsync(tmp, bytes);
+            await Task.Run(() =>
+            {
+                if (!File.Exists(target)) { File.Move(tmp, target); return; }
+                // Replace keeps the old file's attributes and permissions; some network shares do not support it
+                try { File.Replace(tmp, target, null, ignoreMetadataErrors: true); }
+                catch (Exception ex) when (ex is IOException or PlatformNotSupportedException) { File.Move(tmp, target, overwrite: true); }
+            });
             Viewer.Annotations.MarkSaved();
             UpdateUi();
-            overwroteOpenFile = string.Equals(Path.GetFullPath(dlg.FileName), Path.GetFullPath(_path!), StringComparison.OrdinalIgnoreCase);
+            overwroteOpenFile = string.Equals(Path.GetFullPath(target), Path.GetFullPath(_path!), StringComparison.OrdinalIgnoreCase);
+            // another file written over: what was kept for it belonged to the file that is gone
+            if (!overwroteOpenFile) AnnotationPersistence.Default.Delete(target);
         }
         catch (Exception ex)
         {
@@ -678,18 +702,22 @@ public partial class MainWindow : Window
             string reason = ex.Message.Contains("owner password", StringComparison.OrdinalIgnoreCase)
                 ? "This PDF is protected and does not allow changes without its owner password, so annotations cannot be written into it.\nYou can still print it with the annotations."
                 : ex.Message;
+            try { File.Delete(tmp); } catch (Exception) { }
             MessageBox.Show(this, "The file could not be saved.\n\n" + reason, "pPdf", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
-        finally { SetBusy(false); }
+        finally { _saving = false; SetBusy(false); }
 
         if (overwroteOpenFile && _path is { } saved)
         {
-            // the annotations are now part of the file itself: the kept ones would be drawn a second time. Open the new file instead.
+            // the annotations and form values are now part of the file itself: kept ones would be drawn a second time. Open the new file instead.
             _keepTimer.Stop();
-            _keepChanged = false;
-            AnnotationPersistence.Default.Delete(saved);
+            _keepSuspended = true;
             Viewer.Annotations.Clear();
+            _keepSuspended = false;
+            _keepChanged = false;
+            _pendingFormValues = null;
+            AnnotationPersistence.Default.Delete(saved);
             await OpenAsync(saved);
         }
         return true;

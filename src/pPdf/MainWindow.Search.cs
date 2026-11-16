@@ -29,7 +29,7 @@ public partial class MainWindow
         if (_pdf == null) return;
         FindBar.Visibility = Visibility.Visible;
         FindToggle.IsChecked = true;
-        string selected = Viewer.GetSelectedText().Trim();
+        string selected = Viewer.GetSelectedTextIfLoaded().Trim();
         if (selected.Length > 0 && selected.Length < 200 && !selected.Contains('\n') && !selected.Contains('\r'))
             FindBox.Text = selected;
         FindBox.Focus();

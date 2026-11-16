@@ -11,7 +11,7 @@ public partial class MainWindow
     void OnStrike(object sender, RoutedEventArgs e) => ApplyMarkup(MarkupKind.Strikeout);
 
     /// <summary>On a selected markup the buttons change its kind; with selected text they mark it.</summary>
-    void ApplyMarkup(MarkupKind kind)
+    async void ApplyMarkup(MarkupKind kind)
     {
         if (_pdf == null) return;
         if (Viewer.SelectedAnnotation is MarkupAnnotation)
@@ -20,7 +20,7 @@ public partial class MainWindow
             return;
         }
         var color = MarkupColorButton.Value ?? Viewer.MarkupColor;
-        if (!Viewer.AddMarkupFromSelection(kind, color))
+        if (!await Viewer.AddMarkupFromSelectionAsync(kind, color))
             StatusLeft.Text = "Select some text first, then choose highlight, underline or strike-through.";
         Viewer.Focus();
     }

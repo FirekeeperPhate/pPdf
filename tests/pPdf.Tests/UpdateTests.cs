@@ -5,7 +5,9 @@ namespace pPdf.Tests;
 
 public class UpdateTests
 {
-    static JsonElement Release(string tag, bool draft = false, bool prerelease = false, string host = "github.com", string? digest = null)
+    const string Sha = "sha256:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
+
+    static JsonElement Release(string tag, bool draft = false, bool prerelease = false, string host = "github.com", string? digest = Sha)
     {
         string digestJson = digest is null ? "" : $", \"digest\": \"{digest}\"";
         string json = $$"""
@@ -54,11 +56,13 @@ public class UpdateTests
     }
 
     [Fact]
-    public void Checksum_is_taken_when_github_gives_it()
+    public void Checksum_is_required()
     {
-        var update = UpdateService.ParseRelease(Release("v0.2.0", digest: "sha256:ABCDEF0123"), Current, false)!;
-        Assert.Equal("ABCDEF0123", update.Sha256);
-        Assert.Null(UpdateService.ParseRelease(Release("v0.2.0"), Current, false)!.Sha256);
+        var update = UpdateService.ParseRelease(Release("v0.2.0"), Current, false)!;
+        Assert.Equal(Sha[7..], update.Sha256);
+        // an installer that cannot be checked is not offered
+        Assert.Null(UpdateService.ParseRelease(Release("v0.2.0", digest: null), Current, false));
+        Assert.Null(UpdateService.ParseRelease(Release("v0.2.0", digest: "sha256:ABCDEF0123"), Current, false));
     }
 
     [Fact]

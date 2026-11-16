@@ -68,6 +68,68 @@ public sealed class PersistenceTests : IDisposable
 
         File.WriteAllText(Path.Combine(P.DirectoryFor(@"C:\x.pdf"), "annotations.json"), "{ not json");
         Assert.True(P.Load(@"C:\x.pdf").IsEmpty);
+        // the damaged file is kept aside, not overwritten by the next save
+        Assert.Single(Directory.GetFiles(P.DirectoryFor(@"C:\x.pdf"), "annotations.json.bad-*"));
+        P.Save(@"C:\x.pdf", [new TextAnnotation { Text = "new" }]);
+        Assert.Single(Directory.GetFiles(P.DirectoryFor(@"C:\x.pdf"), "annotations.json.bad-*"));
+    }
+
+    [Fact]
+    public void A_locked_store_is_reported_unreadable_so_it_is_not_written_over()
+    {
+        P.Save(@"C:\locked.pdf", [new TextAnnotation { Text = "precious" }]);
+        string json = Path.Combine(P.DirectoryFor(@"C:\locked.pdf"), "annotations.json");
+        using (new FileStream(json, FileMode.Open, FileAccess.Read, FileShare.None))
+            Assert.True(P.Load(@"C:\locked.pdf").Unreadable);
+        Assert.Single(P.Load(@"C:\locked.pdf").Annotations);
+    }
+
+    [Fact]
+    public void A_truncated_image_is_written_again()
+    {
+        var img = ImageAnnotation.FromBytes(Png(Colors.Blue)); img.Width = 10; img.Height = 10;
+        P.Save(@"C:\img.pdf", [img]);
+        string file = Directory.GetFiles(P.DirectoryFor(@"C:\img.pdf"), "img-*").Single();
+        File.WriteAllBytes(file, File.ReadAllBytes(file)[..10]); // a crash in the middle of writing it
+        P.Save(@"C:\img.pdf", [img]);
+        Assert.Equal(img.Data, File.ReadAllBytes(file));
+        Assert.Single(P.Load(@"C:\img.pdf").Annotations);
+    }
+
+    [Fact]
+    public void The_fingerprint_is_kept_and_changes_with_the_content()
+    {
+        string a = Path.Combine(Path.GetTempPath(), "ppdf-fp-" + Guid.NewGuid().ToString("N") + ".bin");
+        try
+        {
+            File.WriteAllBytes(a, new byte[300_000]);
+            string? one = AnnotationPersistence.FingerprintOf(a);
+            var bytes = new byte[300_000]; bytes[150_000] = 1;
+            File.WriteAllBytes(a, bytes); // same size, a change in the middle only: still the same mark (cheap check, by design)
+            Assert.Equal(one, AnnotationPersistence.FingerprintOf(a));
+            bytes[10] = 1;
+            File.WriteAllBytes(a, bytes);
+            Assert.NotEqual(one, AnnotationPersistence.FingerprintOf(a));
+
+            P.Save(@"C:\fp.pdf", [new TextAnnotation { Text = "x" }], null, one);
+            Assert.Equal(one, P.Load(@"C:\fp.pdf").Fingerprint);
+        }
+        finally { File.Delete(a); }
+    }
+
+    [Fact]
+    public void Opening_a_document_keeps_its_annotations_from_the_housekeeping()
+    {
+        for (int n = 0; n < 4; n++)
+        {
+            P.Save($@"C:\h{n}.pdf", [new TextAnnotation { Text = "x" }]);
+            Directory.SetLastWriteTimeUtc(P.DirectoryFor($@"C:\h{n}.pdf"), DateTime.UtcNow.AddDays(-10 + n));
+        }
+        P.Load(@"C:\h0.pdf"); // the oldest one, opened today
+        P.Prune(keep: 2);
+        Assert.NotEmpty(P.Load(@"C:\h0.pdf").Annotations);
+        Assert.NotEmpty(P.Load(@"C:\h3.pdf").Annotations);
+        Assert.Empty(P.Load(@"C:\h1.pdf").Annotations);
     }
 
     [Fact]

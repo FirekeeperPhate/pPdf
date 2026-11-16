@@ -153,6 +153,8 @@ public static class UpdateService
             if (!IsGitHubUrl(url)) return null;
             string? sha = asset.TryGetProperty("digest", out var digest) && digest.GetString() is { } d
                           && d.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ? d[7..] : null;
+            // the installer is run (with the rights it asks for): without a checksum to compare it with, it is not offered at all
+            if (sha == null || sha.Length != 64) return null;
             string page = release.TryGetProperty("html_url", out var html) && html.GetString() is { } h && IsGitHubUrl(h) ? h : ReleasesPage;
             // Without a usable size the download could not be checked: no update rather than an error.
             if (!asset.TryGetProperty("size", out var size) || size.ValueKind != JsonValueKind.Number

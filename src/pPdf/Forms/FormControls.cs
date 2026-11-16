@@ -76,6 +76,7 @@ public static class FormControls
         field.PropertyChanged += onValue;
         box.Unloaded += (_, _) => field.PropertyChanged -= onValue;
         box.Loaded += (_, _) => { field.PropertyChanged -= onValue; field.PropertyChanged += onValue; };
+        ModelLink.Set(box, () => field.PropertyChanged -= onValue);
         box.PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape || (e.Key == Key.Enter && !field.Multiline) || (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control))
@@ -126,6 +127,7 @@ public static class FormControls
         field.PropertyChanged += onValue;
         combo.Unloaded += (_, _) => field.PropertyChanged -= onValue;
         combo.Loaded += (_, _) => { field.PropertyChanged -= onValue; field.PropertyChanged += onValue; };
+        ModelLink.Set(combo, () => field.PropertyChanged -= onValue);
         combo.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && !combo.IsDropDownOpen) { e.Handled = true; giveBack(); } };
         return combo;
     }
@@ -159,6 +161,7 @@ public static class FormControls
         field.PropertyChanged += onValue;
         list.Unloaded += (_, _) => field.PropertyChanged -= onValue;
         list.Loaded += (_, _) => { field.PropertyChanged -= onValue; field.PropertyChanged += onValue; };
+        ModelLink.Set(list, () => field.PropertyChanged -= onValue);
         return list;
     }
 }
@@ -179,13 +182,12 @@ sealed class FormMark : FrameworkElement
         field.PropertyChanged += OnField;
         Unloaded += (_, _) => field.PropertyChanged -= OnField;
         Loaded += (_, _) => { field.PropertyChanged -= OnField; field.PropertyChanged += OnField; InvalidateVisual(); };
+        ModelLink.Set(this, () => field.PropertyChanged -= OnField);
     }
 
     bool IsRadio => _field.Kind == FormFieldKind.Radio;
 
-    bool IsOn => IsRadio
-        ? string.Equals(_field.Value, _widget.OnState, StringComparison.Ordinal)
-        : !string.IsNullOrEmpty(_field.Value) && !string.Equals(_field.Value, "Off", StringComparison.OrdinalIgnoreCase);
+    bool IsOn => _field.IsOn(_widget);
 
     void OnField(object? sender, PropertyChangedEventArgs e)
     {

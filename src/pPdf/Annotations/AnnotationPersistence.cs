@@ -29,8 +29,38 @@ public sealed class AnnotationPersistence(string root)
     {
         public List<Annotation> Annotations { get; init; } = [];
         public Dictionary<string, string> FormValues { get; init; } = [];
+        /// <summary>What the document was when the annotations were made (see <see cref="FingerprintOf"/>); null for stores written before 0.3.2.</summary>
+        public string? Fingerprint { get; set; }
+        /// <summary>Something is kept but could not be read now (the disk refused): saving over it would lose it.</summary>
+        public bool Unreadable { get; set; }
         public bool IsEmpty => Annotations.Count == 0 && FormValues.Count == 0;
     }
+
+    /// <summary>
+    /// A short mark of a file's content (size plus a hash of its first and last 64 KB): another file saved under the same name, or the
+    /// same book laid out again, gives another mark, so annotations are never silently drawn on a document they were not made for.
+    /// </summary>
+    public static string? FingerprintOf(string path)
+    {
+        try
+        {
+            using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            const int Piece = 64 * 1024;
+            var buffer = new byte[(int)Math.Min(f.Length, 2 * Piece)];
+            if (f.Length <= 2 * Piece) f.ReadExactly(buffer);
+            else
+            {
+                f.ReadExactly(buffer, 0, Piece);
+                f.Seek(-Piece, SeekOrigin.End);
+                f.ReadExactly(buffer, Piece, Piece);
+            }
+            return f.Length + ":" + Convert.ToHexString(SHA256.HashData(buffer))[..24];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>Taken by every change to a document's folder and by the housekeeping, so it never deletes a folder being used.</summary>
+    static readonly object _gate = new();
 
     sealed class Dto
     {
@@ -59,6 +89,7 @@ public sealed class AnnotationPersistence(string root)
     {
         public int Version { get; set; } = 1;
         public string Path { get; set; } = "";
+        public string? Fingerprint { get; set; }
         public List<Dto> Items { get; set; } = [];
         public Dictionary<string, string> Form { get; set; } = [];
     }
@@ -73,14 +104,19 @@ public sealed class AnnotationPersistence(string root)
     // ------------------------------------------------------------------ save
 
     /// <summary>Writes the annotations (a snapshot: clones are fine) and form values; with nothing to keep, removes what was kept.</summary>
-    public void Save(string pdfPath, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues = null)
+    public void Save(string pdfPath, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues = null, string? fingerprint = null)
+    {
+        lock (_gate) SaveLocked(pdfPath, annotations, formValues, fingerprint);
+    }
+
+    void SaveLocked(string pdfPath, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues, string? fingerprint)
     {
         string dir = DirectoryFor(pdfPath);
         formValues ??= new Dictionary<string, string>();
         if (annotations.Count == 0 && formValues.Count == 0) { Delete(pdfPath); return; }
 
         Directory.CreateDirectory(dir);
-        var file = new File_ { Path = pdfPath, Form = new Dictionary<string, string>(formValues) };
+        var file = new File_ { Path = pdfPath, Fingerprint = fingerprint, Form = new Dictionary<string, string>(formValues) };
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "annotations.json" };
         foreach (var a in annotations)
         {
@@ -112,7 +148,7 @@ public sealed class AnnotationPersistence(string root)
 
         // images no annotation uses any more
         foreach (string f in Directory.EnumerateFiles(dir))
-            if (!keep.Contains(System.IO.Path.GetFileName(f)) && !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) TryDelete(f);
+            if (!keep.Contains(System.IO.Path.GetFileName(f)) && !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) && !System.IO.Path.GetFileName(f).StartsWith("annotations.json.", StringComparison.OrdinalIgnoreCase)) TryDelete(f);
     }
 
     static string WriteImage(string dir, byte[] data)
@@ -120,15 +156,41 @@ public sealed class AnnotationPersistence(string root)
         string ext = data.Length > 3 && data[0] == 0xFF && data[1] == 0xD8 ? ".jpg" : ".png";
         string name = "img-" + Convert.ToHexString(SHA256.HashData(data))[..16] + ext;
         string path = System.IO.Path.Combine(dir, name);
-        if (!File.Exists(path)) File.WriteAllBytes(path, data);
+        // the name comes from the content, so a whole file of the right length is the right file; a piece left by a crash is written again
+        if (!File.Exists(path) || new FileInfo(path).Length != data.Length)
+        {
+            string tmp = path + ".tmp";
+            File.WriteAllBytes(tmp, data);
+            File.Move(tmp, path, overwrite: true);
+        }
         return name;
     }
 
     public void Delete(string pdfPath)
     {
         string dir = DirectoryFor(pdfPath);
-        try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        lock (_gate)
+        {
+            try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>Moves what is kept for a document aside instead of deleting it (the user chose not to show it); the housekeeping removes it later.</summary>
+    public void SetAside(string pdfPath)
+    {
+        string dir = DirectoryFor(pdfPath);
+        lock (_gate)
+        {
+            string aside = dir + "-old-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+            try
+            {
+                if (!Directory.Exists(dir)) return;
+                Directory.Move(dir, aside);
+                Directory.SetLastWriteTimeUtc(aside, DateTime.UtcNow); // the month before it goes counts from now
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Delete(pdfPath); }
+        }
     }
 
     static void TryDelete(string f)
@@ -144,11 +206,29 @@ public sealed class AnnotationPersistence(string root)
         var result = new Snapshot();
         string dir = DirectoryFor(pdfPath);
         string json = System.IO.Path.Combine(dir, "annotations.json");
-        if (!File.Exists(json)) return result;
         File_? file;
-        try { file = JsonSerializer.Deserialize<File_>(File.ReadAllText(json), Json); }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return result; }
+        lock (_gate)
+        {
+            if (!File.Exists(json)) return result;
+            // opening counts as using: the housekeeping forgets the documents not opened for a long time, not the ones annotated long ago
+            try { Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            try { file = JsonSerializer.Deserialize<File_>(File.ReadAllText(json), Json); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // locked or refused for now: it may well be fine later, so it must not be written over
+                result.Unreadable = true;
+                return result;
+            }
+            catch (JsonException)
+            {
+                // damaged for good: kept aside (it can still be looked at), so the next save starts clean without destroying it
+                try { File.Move(json, json + ".bad-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss"), overwrite: true); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { result.Unreadable = true; }
+                return result;
+            }
+        }
         if (file == null) return result;
+        result.Fingerprint = file.Fingerprint;
 
         foreach (var (k, v) in file.Form) result.FormValues[k] = v;
         foreach (var d in file.Items)
@@ -171,7 +251,7 @@ public sealed class AnnotationPersistence(string root)
                 if (a is not MarkupAnnotation) { a.X = d.X; a.Y = d.Y; a.Width = d.W; a.Height = d.H; }
                 result.Annotations.Add(a);
             }
-            catch (Exception ex) when (ex is IOException or FormatException or NotSupportedException or InvalidOperationException or ArgumentException)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // one damaged entry (a missing image...) must not lose the others
             }
@@ -202,16 +282,29 @@ public sealed class AnnotationPersistence(string root)
 
     // ------------------------------------------------------------------ housekeeping
 
-    /// <summary>Forgets the oldest documents beyond <paramref name="keep"/> (and anything older than a year).</summary>
+    /// <summary>
+    /// Forgets the documents not opened for the longest time beyond <paramref name="keep"/> (and anything not opened for three years),
+    /// plus what the user set aside more than a month ago.
+    /// </summary>
     public void Prune(int keep = 150)
     {
         try
         {
             if (!Directory.Exists(root)) return;
-            var dirs = new DirectoryInfo(root).EnumerateDirectories().OrderByDescending(d => d.LastWriteTimeUtc).ToList();
-            for (int i = 0; i < dirs.Count; i++)
-                if (i >= keep || DateTime.UtcNow - dirs[i].LastWriteTimeUtc > TimeSpan.FromDays(365))
-                    try { dirs[i].Delete(true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            var all = new DirectoryInfo(root).EnumerateDirectories().ToList();
+            var dirs = all.Where(d => !d.Name.Contains("-old-")).OrderByDescending(d => d.LastWriteTimeUtc).ToList();
+            var old = all.Where(d => d.Name.Contains("-old-") && DateTime.UtcNow - d.LastWriteTimeUtc > TimeSpan.FromDays(30));
+            var doomed = dirs.Where((d, i) => i >= keep || DateTime.UtcNow - d.LastWriteTimeUtc > TimeSpan.FromDays(3 * 365)).Concat(old);
+            foreach (var d in doomed)
+            {
+                lock (_gate)
+                {
+                    // opened (or annotated) a moment ago, maybe while this was running: in use, not old
+                    d.Refresh();
+                    if (!d.Exists || DateTime.UtcNow - d.LastWriteTimeUtc < TimeSpan.FromMinutes(2)) continue;
+                    try { d.Delete(true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }

@@ -47,7 +47,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=yes
 ; Created by the running app: setup and uninstall ask to close pPdf first
-AppMutex=pPdf.Running
+AppMutex=pPdf.Running,Global\pPdf.Running
 ChangesAssociations=yes
 
 [Languages]

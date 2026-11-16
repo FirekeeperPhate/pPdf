@@ -27,7 +27,7 @@ public static class FormDrawing
                         DrawText(dc, text, b, FormControls.SizeFor(field, widget), field, ink);
                         break;
                     case FormFieldKind.CheckBox:
-                        if (!string.IsNullOrEmpty(field.Value) && !string.Equals(field.Value, "Off", StringComparison.OrdinalIgnoreCase)) DrawTick(dc, b, ink);
+                        if (field.IsOn(widget)) DrawTick(dc, b, ink);
                         break;
                     case FormFieldKind.Radio:
                         if (string.Equals(field.Value, widget.OnState, StringComparison.Ordinal))

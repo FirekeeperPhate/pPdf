@@ -90,6 +90,7 @@ public sealed class AnnotationControl : Grid
         model.PropertyChanged += OnModelChanged;
         Unloaded += (_, _) => model.PropertyChanged -= OnModelChanged;
         Loaded += (_, _) => { model.PropertyChanged -= OnModelChanged; model.PropertyChanged += OnModelChanged; };
+        ModelLink.Set(this, () => model.PropertyChanged -= OnModelChanged);
         Refresh();
         SizeChanged += (_, e) =>
         {

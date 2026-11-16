@@ -148,6 +148,41 @@ public class FormTests
     }
 
     [Fact]
+    public void Text_outside_WinAnsi_asks_viewers_to_draw_the_fields_and_WinAnsi_punctuation_is_kept()
+    {
+        static (string Ap, bool Need) Write(string value)
+        {
+            using var doc = PdfReader.Open(new MemoryStream(TestForm.Create()), PdfDocumentOpenMode.Modify);
+            FormPdf.Apply(doc, new Dictionary<string, string> { ["name"] = value });
+            using var ms = new MemoryStream();
+            doc.Save(ms, false);
+            using var check = PdfReader.Open(new MemoryStream(ms.ToArray()), PdfDocumentOpenMode.Import);
+            var annots = check.Pages[0].Elements.GetArray("/Annots")!;
+            string ap = "";
+            for (int i = 0; i < annots.Elements.Count; i++)
+                if (annots.Elements.GetDictionary(i) is { } d && d.Elements.GetString("/T") == "name")
+                    ap = System.Text.Encoding.Latin1.GetString(d.Elements.GetDictionary("/AP")!.Elements.GetDictionary("/N")!.Stream!.Value);
+            bool need = check.Internals.Catalog.Elements.GetDictionary("/AcroForm")!.Elements.GetBoolean("/NeedAppearances");
+            return (ap, need);
+        }
+        var latin = Write("Caffè… • ™ Œ");
+        Assert.False(latin.Need);
+        Assert.Contains(@"\205", latin.Ap); // … is 0x85 in WinAnsi
+        Assert.Contains(@"\225", latin.Ap); // • is 0x95
+        Assert.DoesNotContain("?", latin.Ap);
+        var polish = Write("Łódź");
+        Assert.True(polish.Need);
+    }
+
+    [Theory]
+    [InlineData("Si", "Si", true)]
+    [InlineData("No", "Si", false)]   // another box of the same name is the one ticked
+    [InlineData("On", "Si", true)]    // a value matching none of the states: kept on, as before
+    [InlineData("Off", "Si", false)]
+    public void Check_boxes_of_one_name_with_their_own_states_are_separate_choices(string value, string state, bool on)
+        => Assert.Equal(on, FormField.IsOn(FormFieldKind.CheckBox, value, state, ["Si", "No"]));
+
+    [Fact]
     public void Turning_a_check_box_off_and_an_unchanged_form_leave_the_rest_alone()
     {
         var original = TestForm.Create();

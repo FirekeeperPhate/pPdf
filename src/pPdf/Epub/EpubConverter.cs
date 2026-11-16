@@ -58,7 +58,7 @@ public static class EpubConverter
         if (string.IsNullOrEmpty(version)) throw new EpubException("The Microsoft Edge WebView2 Runtime is not available.");
 
         string work = Path.Combine(Path.GetTempPath(), "pPdf-epub-" + Guid.NewGuid().ToString("N")[..12]);
-        Interlocked.Increment(ref _active);
+        lock (_gate) _active++;
         Task<CoreWebView2Controller>? browser = null;
         try
         {
@@ -100,7 +100,7 @@ public static class EpubConverter
         {
             // the book could not be unpacked: the browser that was starting for it is not needed
             if (browser != null) _ = CloseWhenReadyAsync(browser);
-            Interlocked.Decrement(ref _active);
+            lock (_gate) _active--;
             _ = Task.Run(() => TryDeleteFolder(work));
             // a conversion handles many megabytes in big arrays and strings: give that memory back now instead of keeping it for later
             System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
@@ -110,12 +110,15 @@ public static class EpubConverter
 
     /// <summary>Conversions running now: the housekeeping must not touch the browser's folder while one is.</summary>
     static int _active;
+    static readonly object _gate = new();
 
     /// <summary>Starts the hidden browser (on the UI thread, which WebView2 requires).</summary>
     static async Task<CoreWebView2Controller> StartBrowserAsync(IntPtr owner, Action<string> mark)
     {
         string userData = Path.Combine(AppSettings.CacheFolder, "webview");
-        var env = await CoreWebView2Environment.CreateAsync(null, userData, new CoreWebView2EnvironmentOptions("--disable-gpu --disable-features=msSmartScreenProtection"));
+        // no name resolves to anything: even a "preconnect" the request filter never sees cannot reach a server (the book itself is a virtual host)
+        var env = await CoreWebView2Environment.CreateAsync(null, userData, new CoreWebView2EnvironmentOptions(
+            $"--disable-gpu --disable-features=msSmartScreenProtection --host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE {EpubBook.Host}\""));
         var controller = await env.CreateCoreWebView2ControllerAsync(owner);
         controller.IsVisible = false;
         controller.Bounds = new System.Drawing.Rectangle(0, 0, 900, 700);
@@ -215,7 +218,18 @@ public static class EpubConverter
                     if ((i >= MaxCachedBooks && files[i].Extension != ".tmp") || staleTmp) try { files[i].Delete(); } catch (IOException) { }
                 }
             }
-            if (Volatile.Read(ref _active) == 0) TryDeleteFolder(Path.Combine(AppSettings.CacheFolder, "webview"));
+            // the browser's folder is first moved aside (instant, and refused while a browser of any pPdf has it open), then deleted:
+            // a conversion starting meanwhile simply makes a new one
+            string webview = Path.Combine(AppSettings.CacheFolder, "webview");
+            string aside = webview + "-old-" + Guid.NewGuid().ToString("N")[..8];
+            bool moved = false;
+            lock (_gate)
+            {
+                if (_active == 0 && Directory.Exists(webview))
+                    try { Directory.Move(webview, aside); moved = true; } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+            if (moved) TryDeleteFolder(aside);
+            foreach (string old in Directory.EnumerateDirectories(AppSettings.CacheFolder, "webview-old-*")) TryDeleteFolder(old);
             foreach (string leftover in Directory.EnumerateDirectories(Path.GetTempPath(), "pPdf-epub-*"))
                 if (DateTime.UtcNow - Directory.GetLastWriteTimeUtc(leftover) > TimeSpan.FromHours(1)) TryDeleteFolder(leftover);
         }

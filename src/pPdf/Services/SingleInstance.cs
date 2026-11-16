@@ -21,7 +21,9 @@ public static class SingleInstance
     static string Suffix => _suffix ??= Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(AppSettings.Folder.ToLowerInvariant())))[..12];
 
     static string MutexName => @"Local\pPdf.Instance." + Suffix;
-    static string PipeName => "pPdf.Pipe." + Suffix;
+    // pipe names are machine-wide while the mutex is per session: the session is part of the name, so the same user signed in
+    // twice (console and remote desktop) gets one pPdf in each, and files never open in a window on the other screen
+    static string PipeName => "pPdf.Pipe." + Suffix + "." + System.Diagnostics.Process.GetCurrentProcess().SessionId;
 
     /// <summary>True for the first pPdf: it keeps the lock for as long as it lives.</summary>
     public static bool TryBecomePrimary()
