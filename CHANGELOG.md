@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.3 (not released yet)
+## 0.3.3
 
 - **Faster wheel scrolling**: a notch moves 120 px (following the Windows "lines to scroll" setting) instead of 96, up to three times as far when the wheel is spun fast, and the glide settles in about 0.15 s at any refresh rate. The one-page and two-page views move twice as far per notch. Touchpads are unchanged.
 
