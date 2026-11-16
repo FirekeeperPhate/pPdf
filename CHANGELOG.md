@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.2 (not released yet)
+## 0.3.2
 
 - **Security (EPUB)**: a book can no longer name a file outside itself. A crafted book could have rewritten the start of one of your files, shown a local text file inside the book, or made Windows connect to a network share (sending your sign-in hash) just by being opened. Books that unpack into far more than they weigh are refused, and the hidden browser cannot even look up a server name.
 - **Annotations are safer**: a save that fails (full disk, antivirus) is tried again instead of being forgotten; logging off or shutting Windows down with pPdf open now keeps the last changes; a damaged or locked store is never written over (a damaged one is kept aside); pictures half written by a crash are written again; annotations on pages a file no longer has are kept; opening a document counts as using it, so the housekeeping no longer forgets annotations of documents you open often (and waits three years, not one).
