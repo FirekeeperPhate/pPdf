@@ -490,9 +490,41 @@ public sealed partial class PdfViewer : Grid
         RaiseStateChanged();
     }
 
+    /// <summary>Which way the view moved last (+1 down, -1 up) and when: the pages ahead are prepared before they show.</summary>
+    int _moveDirection;
+    long _movedAt;
+
+    /// <summary>The view moved in the last moments (a glide, a drag of the scroll bar, a spin of the wheel).</summary>
+    bool IsMoving => _smoothing || Environment.TickCount64 - _movedAt < 150;
+
+    /// <summary>A moment after the view stops: the pages on screen read their text (skipped while moving).</summary>
+    DispatcherTimer? _stillTimer;
+
+    void RestartStillTimer()
+    {
+        if (_stillTimer == null)
+        {
+            _stillTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(180) };
+            _stillTimer.Tick += (_, _) =>
+            {
+                _stillTimer.Stop();
+                if (IsMoving) { _stillTimer.Start(); return; }
+                foreach (int page in _slots.Keys.ToArray()) EnsureText(page);
+            };
+        }
+        _stillTimer.Stop();
+        _stillTimer.Start();
+    }
+
     void OnScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (_inLayout || _pdf == null) return;
+        if (e.VerticalChange != 0)
+        {
+            _moveDirection = Math.Sign(e.VerticalChange);
+            _movedAt = Environment.TickCount64;
+            RestartStillTimer();
+        }
         UpdateVisible();
         ViewMoved?.Invoke(this, EventArgs.Empty);
         if (IsPaged && e.VerticalChange != 0)
@@ -607,6 +639,7 @@ public sealed partial class PdfViewer : Grid
             CompositionTarget.Rendering += OnSmoothFrame;
         }
         _smoothTarget = Math.Clamp(_smoothTarget + delta, 0, Math.Max(0, _scroll.ScrollableHeight));
+        UpdateVisible(); // the pages where the glide will stop start rendering now
     }
 
     void OnSmoothFrame(object? sender, EventArgs e)
@@ -700,6 +733,14 @@ public sealed partial class PdfViewer : Grid
         var view = new Rect(_scroll.HorizontalOffset, _scroll.VerticalOffset, Math.Max(1, _scroll.ViewportWidth), Math.Max(1, _scroll.ViewportHeight));
         // a little room above and below only: pages further away are not worth a render nobody may ever look at
         var near = Rect.Inflate(view, 0, view.Height * 0.35);
+        // while the view is moving, the pages it is moving towards come first: a whole screen ahead, and where a wheel glide will stop
+        if (Environment.TickCount64 - _movedAt < 400 && _moveDirection != 0)
+        {
+            var ahead = new Rect(view.X, _moveDirection > 0 ? view.Bottom : view.Top - view.Height, view.Width, view.Height);
+            near.Union(ahead);
+        }
+        if (_smoothing)
+            near.Union(new Rect(view.X, _smoothTarget - view.Height * 0.2, view.Width, view.Height * 1.4));
 
         // pages to keep alive
         var wanted = new List<int>();
@@ -737,8 +778,11 @@ public sealed partial class PdfViewer : Grid
                 slot.SetGeometry(_result.PageRects[page], _result.Scale, _rotation);
                 OnSlotCreated(slot);
             }
-            bool visible = !Rect.Intersect(_result.PageRects[page], view).IsEmpty;
-            RequestRender(slot, view, visible ? 0 : 1, dpi);
+            // on screen first, then the nearest: half a screen away is priority 2, a screen away 3...
+            var pr = _result.PageRects[page];
+            double gap = pr.Bottom < view.Top ? view.Top - pr.Bottom : pr.Top > view.Bottom ? pr.Top - view.Bottom : 0;
+            bool visible = gap == 0 && !Rect.Intersect(pr, view).IsEmpty;
+            RequestRender(slot, view, visible ? 0 : 1 + Math.Min(4, (int)(gap / view.Height * 2)), dpi);
         }
 
         // the one-page views name a row by its first page
@@ -778,7 +822,14 @@ public sealed partial class PdfViewer : Grid
         }
 
         var key = new RenderKey(slot.PageIndex, fullW, fullH, x, y, w, h, _rotation, _invert);
-        if (slot.ShownKey == key || slot.PendingKey == key) return;
+        if (slot.ShownKey == key || (slot.PendingKey == key && slot.PendingPriority <= priority)) return;
+        if (slot.PendingKey == key)
+        {
+            // already queued further back (it was ahead of the view, now it is on screen): moved up the queue, not drawn twice
+            _renderer.Raise(_pdf, key, priority);
+            slot.PendingPriority = priority;
+            return;
+        }
 
         if (_renderer.TryGetCached(_pdf, key, out var cached))
         {
@@ -791,6 +842,7 @@ public sealed partial class PdfViewer : Grid
         var cts = new CancellationTokenSource();
         slot.Cts = cts;
         slot.PendingKey = key;
+        slot.PendingPriority = priority;
         var pdf = _pdf;
         // a page that appears empty on screen gets a quick half-size draft first (a quarter of the work), the full render follows
         if (priority == 0 && slot.ShownKey == null && !partial && (long)fullW * fullH > 600_000)

@@ -24,58 +24,65 @@
                     <Button x:Name="MoreButton" Style="{StaticResource ToolButton}" Content="&#xE712;" ToolTip="More" Click="OnMoreClick" />
                 </StackPanel>
 
-                <WrapPanel Orientation="Horizontal" ItemHeight="36" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ToolButton}" Content="&#xE8E5;" ToolTip="Open (Ctrl+O)" Click="OnOpenClick" />
-                    <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" Content="&#xE74E;" ToolTip="Save a copy with the annotations (Ctrl+S)" Click="OnSaveClick" />
-                    <Button x:Name="PrintButton" Style="{StaticResource ToolButton}" Content="&#xE749;" ToolTip="Print (Ctrl+P)" Click="OnPrintClick" />
+                <!-- one row: what does not fit goes, from the end, into the » menu (the last child) -->
+                <views:ToolStripPanel x:Name="ToolStrip" Height="36" VerticalAlignment="Center">
+                    <Button Tag="Open..." Style="{StaticResource ToolButton}" Content="&#xE8E5;" ToolTip="Open (Ctrl+O)" Click="OnOpenClick" />
+                    <Button x:Name="SaveButton" Tag="Save a copy..." Style="{StaticResource ToolButton}" Content="&#xE74E;" ToolTip="Save a copy with the annotations (Ctrl+S)" Click="OnSaveClick" />
+                    <Button x:Name="PrintButton" Tag="Print..." Style="{StaticResource ToolButton}" Content="&#xE749;" ToolTip="Print (Ctrl+P)" Click="OnPrintClick" />
                     <Border Style="{StaticResource ToolSeparator}" />
 
-                    <ToggleButton x:Name="SidebarToggle" Style="{StaticResource ToolToggle}" Content="&#xE700;" ToolTip="Pages and outline (F4)" Click="OnSidebarToggle" />
+                    <ToggleButton x:Name="SidebarToggle" Tag="Side panel" Style="{StaticResource ToolToggle}" Content="&#xE700;" ToolTip="Side panel: outline, pages, marks (F4)" Click="OnSidebarToggle" />
                     <Border Style="{StaticResource ToolSeparator}" />
 
-                    <Button x:Name="BackButton" Style="{StaticResource ToolButton}" Content="&#xE72B;" ToolTip="Back to where you were (Alt+Left)" Click="OnBack" />
-                    <Button x:Name="ForwardButton" Style="{StaticResource ToolButton}" Content="&#xE72A;" ToolTip="Forward (Alt+Right)" Click="OnForward" />
-                    <Button x:Name="PrevButton" Style="{StaticResource ToolButton}" Content="&#xE70E;" ToolTip="Previous page" Click="OnPrevPage" />
-                    <TextBox x:Name="PageBox" Width="48" HorizontalContentAlignment="Center" VerticalAlignment="Center" Margin="2,0"
-                             ToolTip="Go to page" KeyDown="OnPageBoxKeyDown" GotKeyboardFocus="OnBoxGotFocus" />
-                    <TextBlock x:Name="PageCountText" VerticalAlignment="Center" Margin="2,0,6,0" Foreground="{DynamicResource SubtleTextBrush}" Text="/ 0" />
-                    <Button x:Name="NextButton" Style="{StaticResource ToolButton}" Content="&#xE70D;" ToolTip="Next page" Click="OnNextPage" />
+                    <StackPanel x:Name="NavGroup" Orientation="Horizontal">
+                        <Button x:Name="BackButton" Tag="Back" Style="{StaticResource ToolButton}" Content="&#xE72B;" ToolTip="Back to where you were (Alt+Left)" Click="OnBack" />
+                        <Button x:Name="ForwardButton" Style="{StaticResource ToolButton}" Content="&#xE72A;" ToolTip="Forward (Alt+Right)" Click="OnForward" />
+                    </StackPanel>
+                    <StackPanel x:Name="PageGroup" Orientation="Horizontal">
+                        <Button x:Name="PrevButton" Style="{StaticResource ToolButton}" Content="&#xE70E;" ToolTip="Previous page" Click="OnPrevPage" />
+                        <TextBox x:Name="PageBox" Width="48" HorizontalContentAlignment="Center" VerticalAlignment="Center" Margin="2,0"
+                                 ToolTip="Go to page (Ctrl+G)" KeyDown="OnPageBoxKeyDown" GotKeyboardFocus="OnBoxGotFocus" />
+                        <TextBlock x:Name="PageCountText" VerticalAlignment="Center" Margin="2,0,6,0" Foreground="{DynamicResource SubtleTextBrush}" Text="/ 0" />
+                        <Button x:Name="NextButton" Style="{StaticResource ToolButton}" Content="&#xE70D;" ToolTip="Next page" Click="OnNextPage" />
+                    </StackPanel>
                     <Border Style="{StaticResource ToolSeparator}" />
 
-                    <Button Style="{StaticResource ToolButton}" Content="&#xE71F;" ToolTip="Zoom out (Ctrl+-)" Click="OnZoomOut" />
-                    <ComboBox x:Name="ZoomBox" Width="108" IsEditable="True" VerticalAlignment="Center" Margin="2,0"
-                              ToolTip="Zoom" KeyDown="OnZoomBoxKeyDown" SelectionChanged="OnZoomSelectionChanged" GotKeyboardFocus="OnBoxGotFocus" />
-                    <Button Style="{StaticResource ToolButton}" Content="&#xE8A3;" ToolTip="Zoom in (Ctrl++)" Click="OnZoomIn" />
+                    <StackPanel x:Name="ZoomGroup" Orientation="Horizontal">
+                        <Button Style="{StaticResource ToolButton}" Content="&#xE71F;" ToolTip="Zoom out (Ctrl+-)" Click="OnZoomOut" />
+                        <ComboBox x:Name="ZoomBox" Width="108" IsEditable="True" VerticalAlignment="Center" Margin="2,0"
+                                  ToolTip="Zoom" KeyDown="OnZoomBoxKeyDown" SelectionChanged="OnZoomSelectionChanged" GotKeyboardFocus="OnBoxGotFocus" />
+                        <Button Style="{StaticResource ToolButton}" Content="&#xE8A3;" ToolTip="Zoom in (Ctrl++)" Click="OnZoomIn" />
+                    </StackPanel>
                     <Border Style="{StaticResource ToolSeparator}" />
 
-                    <Button x:Name="LayoutButton" Style="{StaticResource ToolButton}" Content="&#xE8A9;" ToolTip="Page layout" Click="OnLayoutClick" />
-                    <Button Style="{StaticResource ToolButton}" Content="&#xE7AD;" ToolTip="Rotate clockwise (Ctrl+R)" Click="OnRotateRight" />
-                    <Button Style="{StaticResource ToolButton}" Content="&#xE7AD;" ToolTip="Rotate counter-clockwise (Ctrl+Shift+R)" Click="OnRotateLeft" RenderTransformOrigin="0.5,0.5">
-                        <Button.RenderTransform>
-                            <ScaleTransform ScaleX="-1" />
-                        </Button.RenderTransform>
+                    <!-- layout, fit, rotation: one menu -->
+                    <Button x:Name="LayoutButton" Style="{StaticResource ToolButton}" ToolTip="View: page layout, fit, rotation" Click="OnLayoutClick">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8A9;" />
+                            <TextBlock Text="&#xE70D;" FontSize="9" Margin="4,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
                     </Button>
+                    <ToggleButton x:Name="FindToggle" Tag="Find" Style="{StaticResource ToolToggle}" Content="&#xE721;" ToolTip="Find (Ctrl+F)" Click="OnFindToggle" />
                     <Border Style="{StaticResource ToolSeparator}" />
 
-                    <ToggleButton x:Name="SelectToolButton" Style="{StaticResource ToolToggle}" Content="&#xE933;" ToolTip="Select text; drag the empty page to scroll it" Click="OnSelectTool" />
-                    <ToggleButton x:Name="HandToolButton" Style="{StaticResource ToolToggle}" Content="&#xE7C9;" ToolTip="Hand tool: always drag to scroll, even over text" Click="OnHandTool" />
+                    <ToggleButton x:Name="SelectToolButton" Tag="Select text" Style="{StaticResource ToolToggle}" Content="&#xE933;" ToolTip="Select text; drag the empty page to scroll it" Click="OnSelectTool" />
+                    <ToggleButton x:Name="HandToolButton" Tag="Hand tool" Style="{StaticResource ToolToggle}" Content="&#xE7C9;" ToolTip="Hand tool: always drag to scroll, even over text" Click="OnHandTool" />
                     <Border Style="{StaticResource ToolSeparator}" />
 
-                    <ToggleButton x:Name="TextToolButton" Style="{StaticResource ToolToggle}" Content="&#xE8D2;" ToolTip="Add text (T): click on the page" Click="OnTextTool" />
-                    <Button Style="{StaticResource ToolButton}" Content="&#xE8B9;" ToolTip="Add image (I) - or paste / drop one" Click="OnAddImage" />
+                    <ToggleButton x:Name="TextToolButton" Tag="Add text" Style="{StaticResource ToolToggle}" Content="&#xE8D2;" ToolTip="Add text (T): click on the page" Click="OnTextTool" />
+                    <Button x:Name="ImageButton" Tag="Add image" Style="{StaticResource ToolButton}" Content="&#xE8B9;" ToolTip="Add image (I) - or paste / drop one" Click="OnAddImage" />
+                    <!-- highlight / underline / strike-through: the button marks the selection with the last kind used, the arrow chooses -->
+                    <StackPanel x:Name="MarkupGroup" Orientation="Horizontal">
+                        <Button x:Name="MarkupButton" Style="{StaticResource ToolButton}" Padding="9,6,3,6" Click="OnMarkupClick" />
+                        <Button x:Name="MarkupMenuButton" Style="{StaticResource ToolButton}" Content="&#xE70D;" FontSize="9" Padding="3,6,6,6" ToolTip="Highlight, underline or strike through" Click="OnMarkupMenu" />
+                        <views:ColorPickerButton x:Name="MarkupColorButton" Glyph="&#xE790;" Tip="Color of highlights and lines" ValueChanged="OnMarkupColorChanged" />
+                    </StackPanel>
                     <Border Style="{StaticResource ToolSeparator}" />
-                    <Button x:Name="HighlightButton" Style="{StaticResource ToolButton}" Content="&#xE7E6;" ToolTip="Highlight the selected text" Click="OnHighlight" />
-                    <Button x:Name="UnderlineButton" Style="{StaticResource ToolButton}" Content="&#xE8DC;" ToolTip="Underline the selected text" Click="OnUnderline" />
-                    <Button x:Name="StrikeButton" Style="{StaticResource ToolButton}" ToolTip="Strike through the selected text" Click="OnStrike">
-                        <TextBlock Text="S" FontFamily="Segoe UI" FontSize="15" FontWeight="SemiBold" TextDecorations="Strikethrough" />
-                    </Button>
-                    <views:ColorPickerButton x:Name="MarkupColorButton" Glyph="&#xE790;" Tip="Color of highlights and lines" ValueChanged="OnMarkupColorChanged" />
                     <Button x:Name="UndoButton" Style="{StaticResource ToolButton}" Content="&#xE7A7;" ToolTip="Undo (Ctrl+Z)" Click="OnUndo" />
                     <Button x:Name="RedoButton" Style="{StaticResource ToolButton}" Content="&#xE7A6;" ToolTip="Redo (Ctrl+Y)" Click="OnRedo" />
-                    <Border Style="{StaticResource ToolSeparator}" />
 
-                    <ToggleButton x:Name="FindToggle" Style="{StaticResource ToolToggle}" Content="&#xE721;" ToolTip="Find (Ctrl+F)" Click="OnFindToggle" />
-                </WrapPanel>
+                    <Button x:Name="OverflowButton" Style="{StaticResource ToolButton}" Content="»" FontFamily="Segoe UI" FontSize="18" Padding="10,2,10,5" ToolTip="The tools that do not fit in the window" Click="OnOverflowClick" />
+                </views:ToolStripPanel>
             </DockPanel>
         </Border>
 
@@ -101,7 +108,19 @@
         </Border>
 
         <!-- ============================== find bar ============================== -->
-        <Border x:Name="FindBar" Grid.Row="2" Visibility="Collapsed" Background="{DynamicResource BarBackgroundBrush}"
+        <StackPanel Grid.Row="2">
+        <!-- a scanned document: offers to recognize its text, then shows how far it got -->
+        <Border x:Name="NoticeBar" Visibility="Collapsed" Background="{DynamicResource BarBackgroundBrush}"
+                BorderBrush="{DynamicResource BarBorderBrush}" BorderThickness="0,0,0,1" Padding="10,4">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Content="&#xE711;" ToolTip="Close" Click="OnNoticeClose" />
+                <Button x:Name="NoticeButton" DockPanel.Dock="Right" Padding="12,4" Margin="8,0" VerticalAlignment="Center" Click="OnNoticeAction" />
+                <ProgressBar x:Name="NoticeProgress" DockPanel.Dock="Right" Width="140" Height="4" VerticalAlignment="Center" Visibility="Collapsed" />
+                <TextBlock Text="&#xE8D2;" FontFamily="{StaticResource IconFont}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource SubtleTextBrush}" />
+                <TextBlock x:Name="NoticeText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+        <Border x:Name="FindBar" Visibility="Collapsed" Background="{DynamicResource BarBackgroundBrush}"
                 BorderBrush="{DynamicResource BarBorderBrush}" BorderThickness="0,0,0,1" Padding="10,5">
             <StackPanel Orientation="Horizontal">
                 <TextBox x:Name="FindBox" Width="280" VerticalAlignment="Center" TextChanged="OnFindTextChanged" KeyDown="OnFindKeyDown" />
@@ -113,6 +132,7 @@
                 <Button Style="{StaticResource ToolButton}" Content="&#xE711;" ToolTip="Close (Esc)" Click="OnFindClose" Margin="10,0,0,0" />
             </StackPanel>
         </Border>
+        </StackPanel>
 
         <!-- ============================== content ============================== -->
         <Grid Grid.Row="3">
@@ -129,8 +149,9 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6">
-                    <RadioButton x:Name="OutlineTab" GroupName="side" Content="Outline" IsChecked="True" Style="{StaticResource {x:Type ToggleButton}}" Padding="14,4" Margin="2,0" Focusable="False" Checked="OnSideTabChanged" />
-                    <RadioButton x:Name="ThumbTab" GroupName="side" Content="Pages" Style="{StaticResource {x:Type ToggleButton}}" Padding="14,4" Margin="2,0" Focusable="False" Checked="OnSideTabChanged" />
+                    <RadioButton x:Name="OutlineTab" GroupName="side" Content="Outline" IsChecked="True" Style="{StaticResource {x:Type ToggleButton}}" Padding="9,4" Margin="1,0" Focusable="False" Checked="OnSideTabChanged" />
+                    <RadioButton x:Name="ThumbTab" GroupName="side" Content="Pages" Style="{StaticResource {x:Type ToggleButton}}" Padding="9,4" Margin="1,0" Focusable="False" Checked="OnSideTabChanged" />
+                    <RadioButton x:Name="MarksTab" GroupName="side" Content="Marks" ToolTip="Your bookmarks and annotations" Style="{StaticResource {x:Type ToggleButton}}" Padding="9,4" Margin="1,0" Focusable="False" Checked="OnSideTabChanged" />
                 </StackPanel>
                 <ListBox x:Name="ThumbList" Grid.Row="1" Visibility="Collapsed" Background="Transparent" BorderThickness="0" SelectionChanged="OnThumbSelected"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.ScrollUnit="Pixel">
@@ -159,6 +180,19 @@
                         </HierarchicalDataTemplate>
                     </TreeView.ItemTemplate>
                 </TreeView>
+                <ScrollViewer x:Name="MarksPanel" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="6,2,6,10">
+                        <DockPanel Margin="4,4,0,2">
+                            <Button x:Name="AddBookmarkButton" DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Content="&#xE710;" ToolTip="Bookmark this page (Ctrl+D)" Click="OnAddBookmark" />
+                            <TextBlock Text="Bookmarks" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <StackPanel x:Name="BookmarkItems" />
+                        <TextBlock x:Name="BookmarksEmpty" Text="None yet: Ctrl+D (or +) marks the page you are reading." TextWrapping="Wrap" Margin="4,2,4,8" Foreground="{DynamicResource SubtleTextBrush}" />
+                        <TextBlock Text="Annotations" FontWeight="SemiBold" Margin="4,12,0,6" />
+                        <StackPanel x:Name="AnnotationItems" />
+                        <TextBlock x:Name="AnnotationsEmpty" Text="None yet: text boxes, images and highlights you add are listed here." TextWrapping="Wrap" Margin="4,2,4,0" Foreground="{DynamicResource SubtleTextBrush}" />
+                    </StackPanel>
+                </ScrollViewer>
                 <TextBlock x:Name="OutlineEmpty" Grid.Row="1" Text="This document has no outline." Visibility="Collapsed" TextWrapping="Wrap"
                            Margin="14" HorizontalAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" />
             </Grid>

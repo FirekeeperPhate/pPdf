@@ -13,6 +13,14 @@ public sealed class FormWidget
     public Rect Bounds { get; init; }
     /// <summary>Check boxes and radio buttons: the name of the "on" state of this widget (without the leading slash).</summary>
     public string OnState { get; init; } = "Yes";
+    /// <summary>The frame the document gives the field (/MK /BC), drawn when printing; null = none.</summary>
+    public System.Windows.Media.Color? BorderColor { get; init; }
+    /// <summary>The background of the field (/MK /BG); null = transparent.</summary>
+    public System.Windows.Media.Color? FillColor { get; init; }
+    /// <summary>Points (/BS /W, default 1).</summary>
+    public double BorderWidth { get; init; } = 1;
+    /// <summary>/BS /S: S solid, D dashed, B beveled, I inset, U underline.</summary>
+    public char BorderStyle { get; init; } = 'S';
 }
 
 /// <summary>A fillable field of an AcroForm, with the value the user sees now.</summary>

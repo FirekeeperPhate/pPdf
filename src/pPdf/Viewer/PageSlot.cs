@@ -55,6 +55,8 @@ sealed class PageSlot : Canvas
     // rendering state, owned by the viewer
     public RenderKey? ShownKey { get; private set; }
     public RenderKey? PendingKey { get; set; }
+    /// <summary>The priority <see cref="PendingKey"/> was queued with: a page that comes on screen asks again, sooner.</summary>
+    public int PendingPriority { get; set; }
     public CancellationTokenSource? Cts { get; set; }
     public bool TextRequested { get; set; }
 

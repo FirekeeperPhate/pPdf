@@ -54,6 +54,14 @@ static class TestForm
         var name = Widget(doc, page, Rect(100, 700, 300, 720));
         name.Elements.SetName("/FT", "/Tx"); name.Elements.SetString("/T", "name"); name.Elements.SetString("/V", "Marco");
         name.Elements.SetString("/DA", "/Helv 12 Tf 0 g");
+        // a blue frame 2 pt wide on a light yellow background
+        var mk = new PdfDictionary(doc);
+        var bc = new PdfArray(doc); bc.Elements.Add(new PdfReal(0)); bc.Elements.Add(new PdfReal(0)); bc.Elements.Add(new PdfReal(1));
+        var bg = new PdfArray(doc); bg.Elements.Add(new PdfReal(1)); bg.Elements.Add(new PdfReal(1)); bg.Elements.Add(new PdfReal(0.8));
+        mk.Elements.SetValue("/BC", bc); mk.Elements.SetValue("/BG", bg);
+        name.Elements.SetValue("/MK", mk);
+        var bs = new PdfDictionary(doc); bs.Elements.SetInteger("/W", 2); bs.Elements.SetName("/S", "/S");
+        name.Elements.SetValue("/BS", bs);
         top.Elements.Add(name.Reference!);
 
         var notes = Widget(doc, page, Rect(100, 600, 300, 680));

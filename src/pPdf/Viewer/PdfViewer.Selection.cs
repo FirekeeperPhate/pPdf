@@ -88,7 +88,16 @@ public sealed partial class PdfViewer
         PopulateAnnotations(slot);
         RebuildForm(slot);
         if (_texts.ContainsKey(slot.PageIndex)) RefreshOverlays(slot);
-        else EnsureText(slot.PageIndex);
+        // while the view is flying past, reading the text would hold PDFium away from drawing: it is read once the view stops
+        else if (!IsMoving) EnsureText(slot.PageIndex);
+    }
+
+    /// <summary>The text of a page changed (it was recognized): read again, and its overlays redrawn.</summary>
+    public void RefreshText(int page)
+    {
+        _texts.Remove(page);
+        _textLoading.Remove(page);
+        if (_slots.ContainsKey(page)) EnsureText(page);
     }
 
     void EnsureText(int page)

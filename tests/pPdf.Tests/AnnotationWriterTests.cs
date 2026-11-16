@@ -186,4 +186,15 @@ public class MarkupWriterTests
         for (int y = 303; y <= 311 && !blue; y++) { var p = Px(100, y); blue = p[0] > 200 && p[2] < 120; }
         Assert.True(blue, "strike-through line is drawn");
     }
+
+    [Fact]
+    public void Bookmarks_are_added_to_the_outline_of_the_copy()
+    {
+        var bytes = TestPdf.Create([["one"], ["two"], ["three"]]);
+        var copy = PdfAnnotationWriter.Apply(bytes, null, [], null, [new Bookmark(2, "Last page"), new Bookmark(0, "First"), new Bookmark(9, "gone")]);
+        using var pdf = PdfFile.Open(copy);
+        var outline = pdf.LoadOutline();
+        Assert.Equal(["First", "Last page"], outline.Select(n => n.Title));
+        Assert.Equal([0, 2], outline.Select(n => n.PageIndex));
+    }
 }

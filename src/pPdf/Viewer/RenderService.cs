@@ -88,6 +88,16 @@ public sealed class RenderService : IDisposable
         return job.Tcs.Task;
     }
 
+    /// <summary>Moves a queued render up to <paramref name="priority"/> (a page prepared ahead that is now on screen).</summary>
+    public void Raise(PdfFile pdf, RenderKey key, int priority)
+    {
+        lock (_gate)
+        {
+            foreach (var j in _queue)
+                if (j.Pdf == pdf && j.Key == key && j.Priority > priority) { j.Priority = priority; j.Seq = ++_seq; }
+        }
+    }
+
     void Run()
     {
         while (true)

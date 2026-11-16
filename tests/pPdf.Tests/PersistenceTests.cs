@@ -170,4 +170,19 @@ public sealed class PersistenceTests : IDisposable
         Assert.True(store.IsDirty);
         Assert.True(store.CanUndo);
     }
+
+    [Fact]
+    public void Bookmarks_are_kept_alone_or_with_annotations_and_removed_with_the_last_mark()
+    {
+        const string pdf = @"C:\docs\marks.pdf";
+        P.Save(pdf, [], null, null, [new Bookmark(3, "Chapter two"), new Bookmark(0, "Cover")]);
+        var back = P.Load(pdf);
+        Assert.Equal([new Bookmark(3, "Chapter two"), new Bookmark(0, "Cover")], back.Bookmarks);
+        Assert.False(back.IsEmpty);
+
+        // nothing left to keep: the folder goes
+        P.Save(pdf, [], null, null, []);
+        Assert.True(P.Load(pdf).IsEmpty);
+        Assert.False(Directory.Exists(P.DirectoryFor(pdf)));
+    }
 }

@@ -29,11 +29,12 @@ public sealed class AnnotationPersistence(string root)
     {
         public List<Annotation> Annotations { get; init; } = [];
         public Dictionary<string, string> FormValues { get; init; } = [];
+        public List<Bookmark> Bookmarks { get; init; } = [];
         /// <summary>What the document was when the annotations were made (see <see cref="FingerprintOf"/>); null for stores written before 0.3.2.</summary>
         public string? Fingerprint { get; set; }
         /// <summary>Something is kept but could not be read now (the disk refused): saving over it would lose it.</summary>
         public bool Unreadable { get; set; }
-        public bool IsEmpty => Annotations.Count == 0 && FormValues.Count == 0;
+        public bool IsEmpty => Annotations.Count == 0 && FormValues.Count == 0 && Bookmarks.Count == 0;
     }
 
     /// <summary>
@@ -92,6 +93,13 @@ public sealed class AnnotationPersistence(string root)
         public string? Fingerprint { get; set; }
         public List<Dto> Items { get; set; } = [];
         public Dictionary<string, string> Form { get; set; } = [];
+        public List<BookmarkDto>? Bookmarks { get; set; }
+    }
+
+    sealed class BookmarkDto
+    {
+        public int Page { get; set; }
+        public string Title { get; set; } = "";
     }
 
     public string DirectoryFor(string pdfPath)
@@ -104,19 +112,25 @@ public sealed class AnnotationPersistence(string root)
     // ------------------------------------------------------------------ save
 
     /// <summary>Writes the annotations (a snapshot: clones are fine) and form values; with nothing to keep, removes what was kept.</summary>
-    public void Save(string pdfPath, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues = null, string? fingerprint = null)
+    public void Save(string pdfPath, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues = null, string? fingerprint = null,
+        IReadOnlyList<Bookmark>? bookmarks = null)
     {
-        lock (_gate) SaveLocked(pdfPath, annotations, formValues, fingerprint);
+        lock (_gate) SaveLocked(pdfPath, annotations, formValues, fingerprint, bookmarks ?? []);
     }
 
-    void SaveLocked(string pdfPath, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues, string? fingerprint)
+    void SaveLocked(string pdfPath, IReadOnlyList<Annotation> annotations, IReadOnlyDictionary<string, string>? formValues, string? fingerprint,
+        IReadOnlyList<Bookmark> bookmarks)
     {
         string dir = DirectoryFor(pdfPath);
         formValues ??= new Dictionary<string, string>();
-        if (annotations.Count == 0 && formValues.Count == 0) { Delete(pdfPath); return; }
+        if (annotations.Count == 0 && formValues.Count == 0 && bookmarks.Count == 0) { Delete(pdfPath); return; }
 
         Directory.CreateDirectory(dir);
-        var file = new File_ { Path = pdfPath, Fingerprint = fingerprint, Form = new Dictionary<string, string>(formValues) };
+        var file = new File_
+        {
+            Path = pdfPath, Fingerprint = fingerprint, Form = new Dictionary<string, string>(formValues),
+            Bookmarks = bookmarks.Count == 0 ? null : bookmarks.Select(b => new BookmarkDto { Page = b.Page, Title = b.Title }).ToList(),
+        };
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "annotations.json" };
         foreach (var a in annotations)
         {
@@ -231,6 +245,8 @@ public sealed class AnnotationPersistence(string root)
         result.Fingerprint = file.Fingerprint;
 
         foreach (var (k, v) in file.Form) result.FormValues[k] = v;
+        foreach (var b in file.Bookmarks ?? [])
+            if (b != null && b.Page >= 0) result.Bookmarks.Add(new Bookmark(b.Page, b.Title ?? ""));
         foreach (var d in file.Items)
         {
             try

@@ -18,6 +18,8 @@ public partial class MainWindow
     string? _fingerprint;
     /// <summary>Kept annotations on pages this file no longer has: not shown, but written back so they are not lost.</summary>
     List<Annotation> _keptElsewhere = [];
+    /// <summary>The bookmarks of the open document (also those on pages the file no longer has, so they are not lost).</summary>
+    List<Bookmark> _bookmarks = [];
     /// <summary>Form values kept from an earlier session, until the form of the document has been read.</summary>
     Dictionary<string, string>? _pendingFormValues;
 
@@ -46,7 +48,7 @@ public partial class MainWindow
         {
             // clones: the live objects belong to the UI
             var snapshot = Viewer.Annotations.Items.Select(a => a.Clone()).Concat(_keptElsewhere).ToList();
-            AnnotationPersistence.Default.Save(_path, snapshot, KeptFormValues(), _fingerprint);
+            AnnotationPersistence.Default.Save(_path, snapshot, KeptFormValues(), _fingerprint, _bookmarks.ToList());
             _keepChanged = false;
             return true;
         }
@@ -67,6 +69,7 @@ public partial class MainWindow
         _keepBlocked = false;
         _pendingFormValues = null;
         _keptElsewhere = [];
+        _bookmarks = [];
         _fingerprint = fingerprint;
         AnnotationPersistence.Snapshot kept;
         try { kept = AnnotationPersistence.Default.Load(path); }
@@ -89,6 +92,7 @@ public partial class MainWindow
         }
 
         if (kept.FormValues.Count > 0) _pendingFormValues = kept.FormValues;
+        _bookmarks = kept.Bookmarks.ToList();
         _keptElsewhere = kept.Annotations.Where(a => a.Page >= pdf.PageCount).ToList();
         _keepSuspended = true;
         try { Viewer.Annotations.LoadKept(kept.Annotations.Where(a => a.Page < pdf.PageCount)); }

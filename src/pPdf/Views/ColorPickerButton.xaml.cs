@@ -37,6 +37,12 @@ public partial class ColorPickerButton : UserControl
 
     public event EventHandler? ValueChanged;
 
+    /// <summary>The colors of the palette (for offering them elsewhere, e.g. in a menu).</summary>
+    public static IReadOnlyList<string> PaletteColors => Colors;
+
+    /// <summary>Chooses a color as a click in the palette would.</summary>
+    public void Pick(Color? c) => Choose(c);
+
     public string Glyph { get => GlyphText.Text; set => GlyphText.Text = value; }
     public bool AllowNone { get => NoneButton.Visibility == Visibility.Visible; set => NoneButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed; }
     public string Tip { set => Toggle.ToolTip = value; }

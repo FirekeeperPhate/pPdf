@@ -52,6 +52,8 @@ public partial class MainWindow : Window
         InitThemeKeeping();
         InitSearch();
         InitSidebar();
+        InitMarks();
+        InitMarkupButton();
         BuildRecentList();
         UpdateUi();
         ScheduleStartupUpdateCheck();
@@ -100,7 +102,7 @@ public partial class MainWindow : Window
         SidebarColumn.Width = new GridLength(_settings.SidebarVisible ? _settings.SidebarWidth : 0);
         SidebarSplitter.Visibility = _settings.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
         SidebarToggle.IsChecked = _settings.SidebarVisible;
-        (_settings.SidebarPages ? ThumbTab : OutlineTab).IsChecked = true;
+        (_settings.SidebarMarks ? MarksTab : _settings.SidebarPages ? ThumbTab : OutlineTab).IsChecked = true;
         MatchCaseToggle.IsChecked = _settings.MatchCase;
         WholeWordToggle.IsChecked = _settings.WholeWord;
     }
@@ -207,6 +209,7 @@ public partial class MainWindow : Window
     {
         // a copy being written: closing now would leave half a file
         if (_saving) { e.Cancel = true; return; }
+        StopRecognizing();
         // the annotations are kept for the next time: nothing to ask
         Viewer.CommitEdits();
         FlushAnnotations();
@@ -324,6 +327,7 @@ public partial class MainWindow : Window
         _settings.AddRecent(path);
         BuildRecentList();
         LoadSidebar(pdf);
+        _ = CheckScannedAsync(pdf, path, fingerprint);
         if (FindBar.Visibility == Visibility.Visible && FindBox.Text.Length > 0) RunSearch();
         UpdateUi();
         Viewer.Focus();
@@ -358,6 +362,7 @@ public partial class MainWindow : Window
         if (_pdf == null) return;
         if (saveRecent) RememberPosition();
         FlushAnnotations();
+        EndOcr();
         ResetSearch();
         _keepSuspended = true; // closing the view empties the store: that is not "the user deleted everything"
         Viewer.Close();
@@ -522,18 +527,27 @@ public partial class MainWindow : Window
     void OnLayoutClick(object sender, RoutedEventArgs e)
     {
         var menu = NewMenu(LayoutButton);
-        void Layout(string header, ViewLayout l) => menu.Items.Add(CheckItem(header, Viewer.Layout == l, () => Viewer.Layout = l, radio: true));
+        FillViewMenu(menu.Items);
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Page layout, fit, rotation: the View menu (also offered in the » menu when the window is narrow).</summary>
+    void FillViewMenu(ItemCollection items)
+    {
+        void Layout(string header, ViewLayout l) => items.Add(CheckItem(header, Viewer.Layout == l, () => Viewer.Layout = l, radio: true));
         Layout("Continuous", ViewLayout.Continuous);
         Layout("Single page", ViewLayout.SinglePage);
         Layout("Two pages", ViewLayout.TwoPages);
         Layout("Two pages, continuous", ViewLayout.TwoPagesContinuous);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(CheckItem("Fit width", Viewer.ZoomMode == ZoomMode.FitWidth, () => Viewer.SetZoomMode(ZoomMode.FitWidth), radio: true));
-        menu.Items.Add(CheckItem("Fit page", Viewer.ZoomMode == ZoomMode.FitPage, () => Viewer.SetZoomMode(ZoomMode.FitPage), radio: true));
-        menu.Items.Add(CheckItem("Actual size", false, () => Viewer.SetZoom(1.0), radio: true));
-        menu.Items.Add(new Separator());
-        menu.Items.Add(CheckItem("Show the cover page alone (two-page views)", Viewer.CoverAlone, () => Viewer.CoverAlone = !Viewer.CoverAlone));
-        menu.IsOpen = true;
+        items.Add(new Separator());
+        items.Add(CheckItem("Fit width", Viewer.ZoomMode == ZoomMode.FitWidth, () => Viewer.SetZoomMode(ZoomMode.FitWidth), radio: true, gesture: "Ctrl+2"));
+        items.Add(CheckItem("Fit page", Viewer.ZoomMode == ZoomMode.FitPage, () => Viewer.SetZoomMode(ZoomMode.FitPage), radio: true, gesture: "Ctrl+0"));
+        items.Add(CheckItem("Actual size", false, () => Viewer.SetZoom(1.0), radio: true, gesture: "Ctrl+1"));
+        items.Add(new Separator());
+        items.Add(CheckItem("Rotate clockwise", false, () => Viewer.Rotation += 1, gesture: "Ctrl+R"));
+        items.Add(CheckItem("Rotate counter-clockwise", false, () => Viewer.Rotation -= 1, gesture: "Ctrl+Shift+R"));
+        items.Add(new Separator());
+        items.Add(CheckItem("Show the cover page alone (two-page views)", Viewer.CoverAlone, () => Viewer.CoverAlone = !Viewer.CoverAlone));
     }
 
     /// <summary>
@@ -550,16 +564,14 @@ public partial class MainWindow : Window
         FontStyle = FontStyles.Normal,
     };
 
-    static MenuItem CheckItem(string header, bool isChecked, Action action, bool radio = false)
+    static MenuItem CheckItem(string header, bool isChecked, Action action, bool radio = false, string? gesture = null)
     {
-        var item = new MenuItem { Header = header, IsChecked = isChecked, IsCheckable = false };
+        var item = new MenuItem { Header = header, IsChecked = isChecked, IsCheckable = false, InputGestureText = gesture ?? "" };
         if (radio && isChecked) item.Icon = new TextBlock { Text = "●", FontSize = 9, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
         item.Click += (_, _) => action();
         return item;
     }
 
-    void OnRotateRight(object sender, RoutedEventArgs e) => Viewer.Rotation += 1;
-    void OnRotateLeft(object sender, RoutedEventArgs e) => Viewer.Rotation -= 1;
 
     void OnSelectTool(object sender, RoutedEventArgs e) { Viewer.Tool = ViewerTool.Select; UpdateUi(); }
     void OnHandTool(object sender, RoutedEventArgs e) { Viewer.Tool = ViewerTool.Hand; UpdateUi(); }
@@ -603,6 +615,12 @@ public partial class MainWindow : Window
         var export = new MenuItem { Header = "Export this page as an image...", IsEnabled = _pdf != null };
         export.Click += (_, _) => _ = ExportPageImageAsync();
         menu.Items.Add(export);
+        var organize = new MenuItem { Header = "Organize pages...", InputGestureText = "Ctrl+Shift+O", IsEnabled = _pdf != null };
+        organize.Click += (_, _) => _ = OrganizePagesAsync();
+        menu.Items.Add(organize);
+        var ocr = new MenuItem { Header = OcrRunning ? "Stop recognizing text" : "Recognize text of scanned pages (OCR)", IsEnabled = _pdf != null };
+        ocr.Click += (_, _) => { if (OcrRunning) StopRecognizing(); else _ = RecognizeTextAsync(); };
+        menu.Items.Add(ocr);
         menu.Items.Add(new Separator());
         MenuItem Doc(string header, Action action) { var mi = new MenuItem { Header = header, IsEnabled = _pdf != null }; mi.Click += (_, _) => action(); return mi; }
         menu.Items.Add(Doc("Document properties...", ShowProperties));
@@ -633,8 +651,8 @@ public partial class MainWindow : Window
     void ShowShortcuts()
     {
         MessageBox.Show(this,
-            "Ctrl+O  Open\nCtrl+S  Save a copy with annotations\nCtrl+P  Print\nCtrl+F  Find   (Enter / F3 next, Shift+Enter / Shift+F3 previous)\n" +
-            "Ctrl+C  Copy selected text\nCtrl+A  Select all text\nF4  Pages / outline panel\n\n" +
+            "Ctrl+O  Open\nCtrl+S  Save a copy with annotations\nCtrl+Shift+O  Organize pages (turn, leave out, reorder, merge)\nCtrl+P  Print\nCtrl+F  Find   (Enter / F3 next, Shift+Enter / Shift+F3 previous)\n" +
+            "Ctrl+C  Copy selected text\nCtrl+A  Select all text\nF4  Side panel (outline, pages, marks)\nCtrl+D  Bookmark this page\n\n" +
             "Ctrl+G  Go to page   Alt+Left / Alt+Right (or the mouse back / forward buttons)  Back / forward\nF11  Full screen\n" +
             "Ctrl+Wheel, Ctrl++ / Ctrl+-  Zoom\nCtrl+0  Fit page   Ctrl+1  Actual size   Ctrl+2  Fit width\nCtrl+R / Ctrl+Shift+R  Rotate\n" +
             "PgUp / PgDn, Space, arrows, Home / End  Navigate\nMiddle mouse drag  Pan\n\n" +
@@ -673,6 +691,8 @@ public partial class MainWindow : Window
         var pdf = _pdf;
         var anns = Viewer.Annotations.Items.ToList();
         var formValues = Viewer.Form?.ChangedValues() ?? [];
+        var bookmarks = _bookmarks.Where(b => b.Page < pdf.PageCount).ToList();
+        var recognized = pdf.OcrPages.ToDictionary(kv => kv.Key, kv => kv.Value);
         bool overwroteOpenFile = false;
         SetBusy(true, "Saving...");
         _saving = true;
@@ -680,7 +700,8 @@ public partial class MainWindow : Window
         string tmp = target + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
         try
         {
-            byte[] bytes = await Task.Run(() => anns.Count == 0 && formValues.Count == 0 ? pdf.GetBytes() : PdfAnnotationWriter.Apply(pdf.GetBytes(), pdf.Password, anns, formValues));
+            byte[] bytes = await Task.Run(() => anns.Count == 0 && formValues.Count == 0 && bookmarks.Count == 0 && recognized.Count == 0
+                ? pdf.GetBytes() : PdfAnnotationWriter.Apply(pdf.GetBytes(), pdf.Password, anns, formValues, bookmarks, recognized));
             // written beside it first, then put in its place: a full disk or a dropped network share never leaves half a file where the old one was
             await File.WriteAllBytesAsync(tmp, bytes);
             await Task.Run(() =>
@@ -708,19 +729,57 @@ public partial class MainWindow : Window
         }
         finally { _saving = false; SetBusy(false); }
 
-        if (overwroteOpenFile && _path is { } saved)
-        {
-            // the annotations and form values are now part of the file itself: kept ones would be drawn a second time. Open the new file instead.
-            _keepTimer.Stop();
-            _keepSuspended = true;
-            Viewer.Annotations.Clear();
-            _keepSuspended = false;
-            _keepChanged = false;
-            _pendingFormValues = null;
-            AnnotationPersistence.Default.Delete(saved);
-            await OpenAsync(saved);
-        }
+        if (overwroteOpenFile && _path is { } saved) await ReopenAfterOverwriteAsync(saved);
         return true;
+    }
+
+    /// <summary>
+    /// The open file was written over with its annotations, form values and bookmarks drawn in: kept ones would be shown a second time.
+    /// They are forgotten and the new file is opened instead.
+    /// </summary>
+    async Task ReopenAfterOverwriteAsync(string saved)
+    {
+        _keepTimer.Stop();
+        _keepSuspended = true;
+        Viewer.Annotations.Clear();
+        _keepSuspended = false;
+        _keepChanged = false;
+        _pendingFormValues = null;
+        _bookmarks = []; // now in the file's own outline
+        AnnotationPersistence.Default.Delete(saved);
+        PageOcr.Delete(saved); // the recognized text is in the file now
+        await OpenAsync(saved);
+    }
+
+    // ------------------------------------------------------------------ organizing pages
+
+    async Task OrganizePagesAsync()
+    {
+        if (_pdf == null || _busy || _path == null) return;
+        Viewer.CommitEdits();
+        FlushAnnotations();
+        var pdf = _pdf;
+        string path = _path;
+        var anns = Viewer.Annotations.Items.Select(a => a.Clone()).ToList();
+        var formValues = Viewer.Form?.ChangedValues() ?? [];
+        var bookmarks = _bookmarks.Where(b => b.Page < pdf.PageCount).ToList();
+        bool has = anns.Count > 0 || formValues.Count > 0 || bookmarks.Count > 0;
+        // recognized text is not an annotation: it always goes with its pages
+        var recognized = pdf.OcrPages.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var win = new OrganizeWindow(this, pdf, path, has, with =>
+            (with && has) || recognized.Count > 0
+                ? PdfAnnotationWriter.Apply(pdf.GetBytes(), pdf.Password, with ? anns : [], with ? formValues : null, with ? bookmarks : null, recognized)
+                : pdf.GetBytes());
+        if (win.ShowDialog() != true || win.SavedPath is not { } saved || _pdf != pdf) return;
+
+        if (string.Equals(Path.GetFullPath(saved), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+        {
+            await ReopenAfterOverwriteAsync(saved);
+            return;
+        }
+        AnnotationPersistence.Default.Delete(saved); // another file written over: what was kept for it belonged to the old one
+        if (ChoiceDialog.Ask(this, "Pages saved", $"The pages were saved as\n{saved}", "Open it", "Close") == 0)
+            ((App)Application.Current).OpenDocuments([saved]);
     }
 
     async void OnPrintClick(object sender, RoutedEventArgs e) => await PrintAsync();
@@ -778,6 +837,7 @@ public partial class MainWindow : Window
             switch (key)
             {
                 case Key.G when _pdf != null: PageBox.Focus(); PageBox.SelectAll(); e.Handled = true; return;
+                case Key.O when shift: _ = OrganizePagesAsync(); e.Handled = true; return;
                 case Key.O: _ = BrowseAndOpenAsync(); e.Handled = true; return;
                 case Key.N: ((App)Application.Current).NewWindow(); e.Handled = true; return;
                 case Key.S when _pdf != null: _ = SaveCopyAsync(); e.Handled = true; return;
@@ -791,6 +851,7 @@ public partial class MainWindow : Window
                 case Key.Y:
                 case Key.Z when shift: Viewer.Annotations.Redo(); e.Handled = true; return;
                 case Key.V: if (Viewer.PasteFromClipboard()) e.Handled = true; return;
+                case Key.D: AddBookmark(); e.Handled = true; return;
                 case Key.D0 or Key.NumPad0: Viewer.SetZoomMode(ZoomMode.FitPage); e.Handled = true; return;
                 case Key.D1 or Key.NumPad1: Viewer.SetZoom(1.0); e.Handled = true; return;
                 case Key.D2 or Key.NumPad2: Viewer.SetZoomMode(ZoomMode.FitWidth); e.Handled = true; return;

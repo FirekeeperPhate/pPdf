@@ -135,7 +135,12 @@ public static class FormPdf
             var rect = w.Dict.Elements.GetRectangle("/Rect");
             var bounds = PageGeometry.Of(w.Page).ToDisplay(rect);
             if (bounds.Width < 1 || bounds.Height < 1) continue;
-            field.Widgets.Add(new FormWidget { Page = w.PageIndex, Bounds = bounds, OnState = OnStateOf(w.Dict) });
+            var (border, fill, width, style) = FrameOf(w.Dict);
+            field.Widgets.Add(new FormWidget
+            {
+                Page = w.PageIndex, Bounds = bounds, OnState = OnStateOf(w.Dict),
+                BorderColor = border, FillColor = fill, BorderWidth = width, BorderStyle = style,
+            });
         }
         var model = new FormModel(fields.Values.Where(f => f.Widgets.Count > 0));
         return model.IsEmpty ? null : model;
@@ -177,6 +182,59 @@ public static class FormPdf
             foreach (var key in normal.Elements.Keys)
                 if (key != "/Off") return key.TrimStart('/');
         return "Yes";
+    }
+
+    /// <summary>
+    /// The frame of a widget as the document describes it: /MK /BC (border color), /MK /BG (background), /BS /W and /S (width, style),
+    /// or the older /Border array. PDFium does not draw widgets, so printing draws these itself.
+    /// </summary>
+    internal static (System.Windows.Media.Color? Border, System.Windows.Media.Color? Fill, double Width, char Style) FrameOf(PdfDictionary widget)
+    {
+        System.Windows.Media.Color? border = null, fill = null;
+        if (Raw(widget, "/MK") is PdfDictionary mk)
+        {
+            border = ColorOf(Raw(mk, "/BC"));
+            fill = ColorOf(Raw(mk, "/BG"));
+        }
+        double width = 1;
+        char style = 'S';
+        if (Raw(widget, "/BS") is PdfDictionary bs)
+        {
+            if (Raw(bs, "/W") is { } w) width = Number(w) ?? 1;
+            if (Text(Raw(bs, "/S")) is { Length: > 0 } s) style = s[0];
+        }
+        else if (Raw(widget, "/Border") is PdfArray arr && arr.Elements.Count >= 3)
+        {
+            width = Number(arr.Elements[2] is PdfReference r ? r.Value : arr.Elements[2]) ?? 1;
+        }
+        return (border, fill, Math.Clamp(width, 0, 12), style);
+    }
+
+    static double? Number(PdfItem? item) => item switch
+    {
+        PdfInteger i => i.Value,
+        PdfReal r => r.Value,
+        _ => null,
+    };
+
+    /// <summary>A color array of the PDF: none (transparent), gray, RGB or CMYK, each component 0..1.</summary>
+    internal static System.Windows.Media.Color? ColorOf(PdfItem? item)
+    {
+        if (item is not PdfArray arr) return null;
+        var c = new double[arr.Elements.Count];
+        for (int i = 0; i < c.Length; i++)
+        {
+            var e = arr.Elements[i] is PdfReference r ? r.Value : arr.Elements[i];
+            c[i] = Math.Clamp(Number(e) ?? 0, 0, 1);
+        }
+        static byte B(double v) => (byte)Math.Round(v * 255);
+        return c.Length switch
+        {
+            1 => System.Windows.Media.Color.FromRgb(B(c[0]), B(c[0]), B(c[0])),
+            3 => System.Windows.Media.Color.FromRgb(B(c[0]), B(c[1]), B(c[2])),
+            4 => System.Windows.Media.Color.FromRgb(B((1 - c[0]) * (1 - c[3])), B((1 - c[1]) * (1 - c[3])), B((1 - c[2]) * (1 - c[3]))),
+            _ => null, // [] = transparent
+        };
     }
 
     static double FontSizeOf(string? da)

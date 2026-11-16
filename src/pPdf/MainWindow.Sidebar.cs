@@ -39,6 +39,7 @@ public partial class MainWindow
         OutlineTree.ItemsSource = null;
         OutlineEmpty.Visibility = Visibility.Collapsed;
         _ = LoadOutlineAsync(pdf);
+        RefreshMarks();
     }
 
     async Task LoadOutlineAsync(PdfFile pdf)
@@ -75,6 +76,9 @@ public partial class MainWindow
         ThumbList.ItemsSource = null;
         OutlineTree.ItemsSource = null;
         OutlineEmpty.Visibility = Visibility.Collapsed;
+        _bookmarks = [];
+        _markupTexts.Clear();
+        RefreshMarks();
     }
 
     void OnThumbLoaded(object sender, RoutedEventArgs e)
@@ -109,13 +113,15 @@ public partial class MainWindow
 
     void OnSideTabChanged(object sender, RoutedEventArgs e)
     {
-        if (ThumbList == null) return; // while the XAML is still being built
-        bool thumbs = ThumbTab.IsChecked == true;
+        if (ThumbList == null || MarksPanel == null) return; // while the XAML is still being built
+        bool thumbs = ThumbTab.IsChecked == true, marks = MarksTab.IsChecked == true, outline = !thumbs && !marks;
         ThumbList.Visibility = thumbs ? Visibility.Visible : Visibility.Collapsed;
-        OutlineTree.Visibility = thumbs ? Visibility.Collapsed : Visibility.Visible;
-        OutlineEmpty.Visibility = !thumbs && _pdf != null && OutlineTree.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (!_autoSwitch) { _settings.SidebarPages = thumbs; _autoPages = false; }
+        OutlineTree.Visibility = outline ? Visibility.Visible : Visibility.Collapsed;
+        MarksPanel.Visibility = marks ? Visibility.Visible : Visibility.Collapsed;
+        OutlineEmpty.Visibility = outline && _pdf != null && OutlineTree.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (!_autoSwitch) { _settings.SidebarPages = thumbs; _settings.SidebarMarks = marks; _autoPages = false; }
         if (thumbs) RefreshThumbs();
+        if (marks) RefreshMarks();
     }
 
     void OnSidebarToggle(object sender, RoutedEventArgs e) => SetSidebar(SidebarToggle.IsChecked == true);

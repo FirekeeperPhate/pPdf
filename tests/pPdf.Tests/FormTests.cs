@@ -41,6 +41,31 @@ public class FormTests
     }
 
     [Fact]
+    public void Field_frames_and_backgrounds_are_read_and_drawn_when_printing()
+    {
+        var bytes = TestForm.Create();
+        var model = FormPdf.Read(bytes, null)!;
+        var name = model.Find("name")!.Widgets[0];
+        Assert.Equal(System.Windows.Media.Color.FromRgb(0, 0, 255), name.BorderColor);
+        Assert.Equal(System.Windows.Media.Color.FromRgb(255, 255, 204), name.FillColor);
+        Assert.Equal(2, name.BorderWidth);
+        Assert.Null(model.Find("agree")!.Widgets[0].BorderColor);
+
+        // at 72 dpi a pixel is a point: the field is at x 100..300, y 122..142 from the top
+        using var pdf = PdfFile.Open(bytes);
+        var img = pPdf.Printing.PageComposer.RenderImage(pdf, 0, 72, 0, [], model);
+        var px = new byte[img.PixelWidth * img.PixelHeight * 4];
+        img.CopyPixels(px, img.PixelWidth * 4, 0);
+        (byte R, byte G, byte B) At(int x, int y) { int o = (y * img.PixelWidth + x) * 4; return (px[o + 2], px[o + 1], px[o]); }
+        var frame = At(101, 132);
+        Assert.True(frame.B > 200 && frame.R < 60 && frame.G < 60, $"frame {frame}");
+        var inside = At(290, 126);
+        Assert.True(inside.R > 240 && inside.G > 240 && inside.B is > 180 and < 230, $"background {inside}");
+        var outside = At(310, 132);
+        Assert.True(outside.R > 245 && outside.G > 245 && outside.B > 245, $"outside {outside}");
+    }
+
+    [Fact]
     public void A_document_without_fields_gives_nothing()
     {
         Assert.Null(FormPdf.Read(TestPdf.Simple(), null));

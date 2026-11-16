@@ -48,6 +48,22 @@ public sealed partial class PdfViewer
         };
     }
 
+    /// <summary>Goes to an annotation (remembered as a jump, so Back returns) and selects it.</summary>
+    public void RevealAnnotation(Annotation a)
+    {
+        if (_pdf == null || _result == null || a.Page < 0 || a.Page >= _pdf.PageCount) return;
+        JumpToPage(a.Page);
+        UpdateVisible();
+        if (_slots.TryGetValue(a.Page, out var slot))
+        {
+            var inSlot = slot.ToSlotRect(new Rect(a.X, a.Y, Math.Max(1, a.Width), Math.Max(1, a.Height)));
+            var pageRect = _result.PageRects[a.Page];
+            EnsureVisible(new Rect(pageRect.X + inSlot.X, pageRect.Y + inSlot.Y, inSlot.Width, inSlot.Height));
+        }
+        SelectedAnnotation = a;
+        Focus();
+    }
+
     AnnotationControl? ControlFor(Annotation a)
         => _slots.TryGetValue(a.Page, out var slot) ? slot.AnnotationLayer.Children.OfType<AnnotationControl>().FirstOrDefault(c => c.Model == a) : null;
 

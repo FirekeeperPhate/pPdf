@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 (not released yet)
+
+- **Scanned documents become searchable (OCR)**: a document whose pages are only pictures is noticed when it opens, and Windows' own text recognition reads it (the bar that appears, or More > Recognize text of scanned pages), in the languages installed in Windows; a page takes a fraction of a second and can be stopped. Search, selection, copy and highlights then work on those pages, the text is kept for the next time the file is opened, and *Save a copy* writes it into the file as invisible text over the pictures, so other programs can search and copy it too. pPdf calls the recognizer directly: the installers do not grow.
+- **Organize pages** (More > Organize pages, Ctrl+Shift+O): turn pages, leave some out, move them earlier or later, insert the pages of other PDF files, then save the result, or only the selected pages, as a new file. Your annotations, form entries and bookmarks can be drawn in; the document's own outline and form stay with the pages that stay.
+- **Bookmarks and the Marks panel**: Ctrl+D (or + in the panel) bookmarks the page you are reading. The new Marks tab of the side panel lists your bookmarks (double-click to rename, right-click to delete) and every annotation of the document, highlights with the words they mark: a click goes there and selects it. Bookmarks are kept with the annotations, and *Save a copy* adds them to the PDF's outline.
+- **Faster scrolling without blank pages**: the pages the view is moving towards (and where a wheel spin will stop) are drawn before they come on screen, the text of the pages is read once the view stops instead of while it flies past, and a page prepared ahead that comes on screen moves to the front of the queue instead of being drawn twice. Measured on a 272-page book with fast wheel spins: frames with a page still blank went from about 12 % to about 5 %, and the pages that still showed blank waited 7 to 50 ms.
+- **Printed forms have their boxes**: fields are printed (and exported as images) with the frame and background color the form gives them, as other viewers print them, instead of values floating on the page.
+- **A tidier toolbar, always on one row**: when the window is too narrow the tools at the end go into a » menu (with their names and shortcuts) instead of wrapping onto a second row. Highlight, underline and strike-through are one button (it repeats the last kind; its arrow chooses), and rotation moved into the View menu with the layouts and fit modes.
+
 ## 0.3.3
 
 - **Faster wheel scrolling**: a notch moves 120 px (following the Windows "lines to scroll" setting) instead of 96, up to three times as far when the wheel is spun fast, and the glide settles in about 0.15 s at any refresh rate. The one-page and two-page views move twice as far per notch. Touchpads are unchanged.

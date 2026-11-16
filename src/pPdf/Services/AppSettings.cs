@@ -27,6 +27,8 @@ public sealed class AppSettings
     public double SidebarWidth { get; set; } = 210;
     /// <summary>The Pages tab (thumbnails) was the last one the user picked; false = the Outline, which is shown first.</summary>
     public bool SidebarPages { get; set; }
+    /// <summary>The Marks tab (bookmarks and annotations) was the last one the user picked.</summary>
+    public bool SidebarMarks { get; set; }
     public bool MatchCase { get; set; }
     public bool WholeWord { get; set; }
 

@@ -16,6 +16,7 @@ public static class FormDrawing
             foreach (var widget in field.Widgets.Where(w => w.Page == page))
             {
                 var b = widget.Bounds;
+                DrawFrame(dc, widget, round: field.Kind == FormFieldKind.Radio);
                 switch (field.Kind)
                 {
                     case FormFieldKind.Text:
@@ -37,6 +38,40 @@ public static class FormDrawing
             }
         }
     }
+
+    /// <summary>
+    /// The background and frame the document gives a field (PDFium leaves widgets out of its rendering, so without this a printed
+    /// form has its values floating on the page with no boxes around them). Fields without /MK colors stay unframed, as elsewhere.
+    /// </summary>
+    internal static void DrawFrame(DrawingContext dc, FormWidget widget, bool round)
+    {
+        var b = widget.Bounds;
+        Brush? fill = widget.FillColor is { } f ? Frozen(new SolidColorBrush(f)) : null;
+        Pen? pen = null;
+        double w = widget.BorderWidth;
+        if (widget.BorderColor is { } c && w > 0)
+        {
+            pen = new Pen(Frozen(new SolidColorBrush(c)), w);
+            if (widget.BorderStyle == 'D') pen.DashStyle = new DashStyle([3, 3], 0);
+            pen.Freeze();
+        }
+        if (fill == null && pen == null) return;
+
+        // the stroke sits inside the box, as in the appearances viewers generate
+        var inner = new Rect(b.X + w / 2, b.Y + w / 2, Math.Max(0, b.Width - w), Math.Max(0, b.Height - w));
+        if (round)
+        {
+            var center = new Point(b.X + b.Width / 2, b.Y + b.Height / 2);
+            dc.DrawEllipse(fill, pen, center, inner.Width / 2, inner.Height / 2);
+            return;
+        }
+        if (fill != null) dc.DrawRectangle(fill, null, b);
+        if (pen == null) return;
+        if (widget.BorderStyle == 'U') dc.DrawLine(pen, new Point(b.Left, b.Bottom - w / 2), new Point(b.Right, b.Bottom - w / 2));
+        else dc.DrawRectangle(null, pen, inner);
+    }
+
+    static Brush Frozen(SolidColorBrush b) { b.Freeze(); return b; }
 
     static void DrawText(DrawingContext dc, string text, Rect b, double size, FormField field, Brush ink)
     {

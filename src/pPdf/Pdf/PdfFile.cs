@@ -264,9 +264,17 @@ public sealed class PdfFile : IDisposable
 
     // ------------------------------------------------------------------ text
 
-    /// <summary>Extracts the text of a page and the box of every character, in display space (points, top-left origin).</summary>
-    public PageText? LoadText(int pageIndex, bool withBoxes)
+    /// <summary>Text recognized on pages that have none of their own (see <see cref="PageOcr"/>): used in place of PDFium's empty text.</summary>
+    public System.Collections.Concurrent.ConcurrentDictionary<int, PageText> OcrPages { get; } = new();
+
+    /// <summary>
+    /// Extracts the text of a page and the box of every character, in display space (points, top-left origin). A page whose text was
+    /// recognized gives that text, unless <paramref name="ownTextOnly"/>.
+    /// </summary>
+    public PageText? LoadText(int pageIndex, bool withBoxes, bool ownTextOnly = false)
     {
+        if (!ownTextOnly && OcrPages.TryGetValue(pageIndex, out var recognized))
+            return IsDisposed ? null : withBoxes ? recognized : new PageText(pageIndex, recognized.Text, null);
         lock (Sync)
         {
             if (_doc == null) return null;
